@@ -4,249 +4,290 @@ import requests
 from aiogram import Router, F, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 
 from app.config import TECH_API
 from app.db import SessionLocal
 from app.i18n import t
 from app.models import ParentSubscription, UserSettings
-from app.keyboards import (
-    main_keyboard,
-    language_keyboard,
-    student_search_results_keyboard,
-    subscriptions_keyboard,
-    unsubscribe_keyboard,
-)
+from app.keyboards import language_keyboard, main_keyboard, results_keyboard, child_keyboard
+from app.states import Form
 
 logger = logging.getLogger(__name__)
 router = Router()
 
+_BACK_TEXTS = ("⬅️ Ortga", "⬅️ Назад")
+_UNSUB_TEXTS = ("❌ Obunani bekor qilish", "❌ Отменить подписку")
 
-class SearchStates(StatesGroup):
-    waiting_for_name = State()
 
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── DB helpers ────────────────────────────────────────────────────────────────
 
 def get_lang(telegram_id: int) -> str:
     with SessionLocal() as db:
-        settings = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
-        return settings.lang if settings else "uz"
+        s = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
+        return s.lang if s else "uz"
 
 
-def set_lang(telegram_id: int, lang: str):
+def set_lang(telegram_id: int, lang: str) -> None:
     with SessionLocal() as db:
-        settings = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
-        if settings:
-            settings.lang = lang
+        s = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
+        if s:
+            s.lang = lang
         else:
             db.add(UserSettings(telegram_id=telegram_id, lang=lang))
         db.commit()
 
 
-# ── /start ───────────────────────────────────────────────────────────────────
+# ── /start ────────────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.set_state(Form.awaiting_lang)
+    await message.answer(t("uz", "choose_lang"), reply_markup=language_keyboard())
+
+
+# ── Language selection ────────────────────────────────────────────────────────
+
+@router.message(Form.awaiting_lang, F.text.in_(["🇺🇿 O'zbek", "🇷🇺 Русский"]))
+async def handle_lang_choice(message: types.Message, state: FSMContext) -> None:
+    lang = "uz" if "O'zbek" in (message.text or "") else "ru"
+    set_lang(message.from_user.id, lang)
     await state.clear()
     await message.answer(
-        t("uz", "choose_lang"),
-        reply_markup=language_keyboard()
+        t(lang, "lang_set") + "\n\n" + t(lang, "welcome"),
+        reply_markup=main_keyboard(lang),
     )
 
 
-@router.callback_query(F.data.startswith("setlang_"))
-async def set_language(callback: types.CallbackQuery):
-    lang = callback.data.split("_")[1]
-    set_lang(callback.from_user.id, lang)
-    await callback.message.answer(
-        t(lang, "lang_set"),
-        parse_mode="HTML"
-    )
-    await callback.message.answer(
-        t(lang, "welcome"),
-        parse_mode="HTML",
-        reply_markup=main_keyboard(lang)
-    )
-    await callback.answer()
+@router.message(Form.awaiting_lang)
+async def awaiting_lang_fallback(message: types.Message) -> None:
+    await message.answer(t("uz", "choose_lang"), reply_markup=language_keyboard())
 
 
-# ── Language switch ───────────────────────────────────────────────────────────
+# ── Language switch from main menu ────────────────────────────────────────────
 
 @router.message(F.text.in_(["🌐 Til: O'zbek", "🌐 Язык: Русский"]))
-async def switch_language(message: types.Message):
+async def switch_language(message: types.Message, state: FSMContext) -> None:
+    await state.set_state(Form.awaiting_lang)
     await message.answer(t("uz", "choose_lang"), reply_markup=language_keyboard())
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
 @router.message(F.text.in_(["🔍 Farzandimni qidirish", "🔍 Найти ребёнка"]))
-@router.callback_query(F.data == "add_new")
-async def ask_child_name(event, state: FSMContext):
-    is_cb = isinstance(event, types.CallbackQuery)
-    tg_id = event.from_user.id
-    lang = get_lang(tg_id)
-    message = event.message if is_cb else event
-    if is_cb:
-        await event.answer()
-    await state.set_state(SearchStates.waiting_for_name)
-    await message.answer(t(lang, "ask_name"), parse_mode="HTML")
-
-
-@router.message(SearchStates.waiting_for_name)
-async def handle_name_search(message: types.Message, state: FSMContext):
+async def ask_child_name(message: types.Message, state: FSMContext) -> None:
     lang = get_lang(message.from_user.id)
-    query = message.text.strip()
+    await state.set_state(Form.awaiting_name)
+    await message.answer(t(lang, "ask_name"), reply_markup=results_keyboard([], lang))
 
-    if len(query) < 2:
-        await message.answer(t(lang, "search_too_short"))
+
+@router.message(Form.awaiting_name)
+async def handle_name_search(message: types.Message, state: FSMContext) -> None:
+    lang = get_lang(message.from_user.id)
+    text = (message.text or "").strip()
+
+    if text in _BACK_TEXTS:
+        await state.clear()
+        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        return
+
+    if len(text) < 2:
+        await message.answer(t(lang, "search_too_short"), reply_markup=results_keyboard([], lang))
         return
 
     try:
-        resp = requests.get(f"{TECH_API}/search-student", params={"q": query}, timeout=10)
+        resp = requests.get(f"{TECH_API}/search-student", params={"q": text}, timeout=10)
         resp.raise_for_status()
         students = resp.json()
     except Exception as e:
         logger.error("Search error: %s", e)
-        await message.answer(t(lang, "search_error"))
         await state.clear()
+        await message.answer(t(lang, "search_error"), reply_markup=main_keyboard(lang))
         return
 
     if not students:
-        await message.answer(t(lang, "not_found", q=query), parse_mode="HTML")
+        await message.answer(
+            t(lang, "not_found", q=text),
+            reply_markup=results_keyboard([], lang),
+        )
         return
 
-    await state.clear()
+    names = [s["name"] for s in students]
+    await state.set_state(Form.choosing_student)
+    await state.update_data(search_results=students)
     await message.answer(
         t(lang, "found", n=len(students)),
-        parse_mode="HTML",
-        reply_markup=student_search_results_keyboard(students, lang)
+        reply_markup=results_keyboard(names, lang),
     )
 
 
-@router.callback_query(F.data.startswith("subscribe_"))
-async def subscribe_to_student(callback: types.CallbackQuery):
-    lang = get_lang(callback.from_user.id)
-    parts = callback.data.split("_", 2)
-    student_id = int(parts[1])
-    student_name = parts[2] if len(parts) > 2 else "O'quvchi"
+@router.message(Form.choosing_student)
+async def handle_student_choice(message: types.Message, state: FSMContext) -> None:
+    lang = get_lang(message.from_user.id)
+    text = (message.text or "").strip()
+
+    if text in _BACK_TEXTS:
+        await state.clear()
+        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        return
+
+    data = await state.get_data()
+    results = data.get("search_results", [])
+    student = next((s for s in results if s["name"] == text), None)
+
+    if not student:
+        await state.clear()
+        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        return
 
     with SessionLocal() as db:
         existing = db.query(ParentSubscription).filter_by(
-            telegram_id=callback.from_user.id,
-            student_platform_id=student_id,
-            is_active=True
+            telegram_id=message.from_user.id,
+            student_platform_id=student["id"],
+            is_active=True,
         ).first()
         if existing:
-            await callback.answer(t(lang, "already_subscribed"), show_alert=True)
+            await state.clear()
+            await message.answer(
+                t(lang, "already_subscribed"), reply_markup=main_keyboard(lang)
+            )
             return
 
         db.add(ParentSubscription(
-            telegram_id=callback.from_user.id,
-            parent_name=callback.from_user.full_name,
-            student_platform_id=student_id,
-            student_name=student_name,
+            telegram_id=message.from_user.id,
+            parent_name=message.from_user.full_name,
+            student_platform_id=student["id"],
+            student_name=student["name"],
         ))
         db.commit()
 
-    await callback.message.answer(
-        t(lang, "subscribed", name=student_name),
-        parse_mode="HTML",
-        reply_markup=main_keyboard(lang)
-    )
-    await callback.answer()
-
-
-@router.callback_query(F.data == "cancel_search")
-async def cancel_search(callback: types.CallbackQuery, state: FSMContext):
-    lang = get_lang(callback.from_user.id)
     await state.clear()
-    await callback.message.answer(t(lang, "cancel"), reply_markup=main_keyboard(lang))
-    await callback.answer()
+    await message.answer(
+        t(lang, "subscribed", name=student["name"]),
+        reply_markup=main_keyboard(lang),
+    )
 
 
 # ── My children ───────────────────────────────────────────────────────────────
 
 @router.message(F.text.in_(["👨‍👧 Farzandlarim ro'yxati", "👨‍👧 Мои дети"]))
-async def my_subscriptions(message: types.Message):
+async def my_children(message: types.Message, state: FSMContext) -> None:
     lang = get_lang(message.from_user.id)
     with SessionLocal() as db:
         subs = db.query(ParentSubscription).filter_by(
             telegram_id=message.from_user.id, is_active=True
         ).all()
+        subs_list = [
+            {"sub_id": s.id, "student_id": s.student_platform_id, "name": s.student_name}
+            for s in subs
+        ]
 
-    if not subs:
+    if not subs_list:
         await message.answer(t(lang, "no_subs"), reply_markup=main_keyboard(lang))
         return
 
+    names = [s["name"] for s in subs_list]
+    await state.set_state(Form.viewing_child)
+    await state.update_data(subscriptions=subs_list, mode="view")
     await message.answer(
-        t(lang, "my_children_title", n=len(subs)),
-        reply_markup=subscriptions_keyboard(subs, lang)
+        t(lang, "my_children_title", n=len(subs_list)),
+        reply_markup=results_keyboard(names, lang),
     )
 
 
-@router.callback_query(F.data.startswith("view_stats_"))
-async def view_student_stats(callback: types.CallbackQuery):
-    lang = get_lang(callback.from_user.id)
-    student_id = int(callback.data.split("_")[-1])
+# ── Unsubscribe from main menu ────────────────────────────────────────────────
 
-    try:
-        resp = requests.get(f"{TECH_API}/student-stats/{student_id}", timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    except Exception as e:
-        logger.error("Stats error: %s", e)
-        await callback.answer(t(lang, "stats_error"), show_alert=True)
-        return
-
-    await callback.message.answer(format_stats(data, lang), parse_mode="HTML")
-    await callback.answer()
-
-
-# ── Unsubscribe ───────────────────────────────────────────────────────────────
-
-@router.message(F.text.in_(["❌ Obunani bekor qilish", "❌ Отменить подписку"]))
-async def unsubscribe_menu(message: types.Message):
+@router.message(F.text.in_(list(_UNSUB_TEXTS)))
+async def unsubscribe_menu(message: types.Message, state: FSMContext) -> None:
     lang = get_lang(message.from_user.id)
     with SessionLocal() as db:
         subs = db.query(ParentSubscription).filter_by(
             telegram_id=message.from_user.id, is_active=True
         ).all()
+        subs_list = [
+            {"sub_id": s.id, "student_id": s.student_platform_id, "name": s.student_name}
+            for s in subs
+        ]
 
-    if not subs:
+    if not subs_list:
         await message.answer(t(lang, "no_active_subs"), reply_markup=main_keyboard(lang))
         return
 
-    await message.answer(t(lang, "ask_unsub"), reply_markup=unsubscribe_keyboard(subs, lang))
+    names = [s["name"] for s in subs_list]
+    await state.set_state(Form.viewing_child)
+    await state.update_data(subscriptions=subs_list, mode="unsubscribe")
+    await message.answer(t(lang, "ask_unsub"), reply_markup=results_keyboard(names, lang))
 
 
-@router.callback_query(F.data.startswith("unsub_"))
-async def confirm_unsubscribe(callback: types.CallbackQuery):
-    lang = get_lang(callback.from_user.id)
-    sub_id = int(callback.data.split("_")[1])
+# ── Viewing child (stats + unsubscribe) ───────────────────────────────────────
 
-    with SessionLocal() as db:
-        sub = db.query(ParentSubscription).filter_by(
-            id=sub_id, telegram_id=callback.from_user.id
-        ).first()
-        name = sub.student_name if sub else "O'quvchi"
-        if sub:
-            sub.is_active = False
-            db.commit()
+@router.message(Form.viewing_child)
+async def handle_child_action(message: types.Message, state: FSMContext) -> None:
+    lang = get_lang(message.from_user.id)
+    text = (message.text or "").strip()
+    data = await state.get_data()
 
-    await callback.message.answer(
-        t(lang, "unsubbed", name=name),
-        parse_mode="HTML",
-        reply_markup=main_keyboard(lang)
-    )
-    await callback.answer()
+    if text in _BACK_TEXTS:
+        await state.clear()
+        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        return
 
+    # Unsubscribe button when a specific child is being viewed
+    if text in _UNSUB_TEXTS:
+        sub_id = data.get("active_sub_id")
+        sub_name = data.get("active_sub_name", "")
+        if sub_id:
+            with SessionLocal() as db:
+                sub = db.query(ParentSubscription).filter_by(
+                    id=sub_id, telegram_id=message.from_user.id
+                ).first()
+                if sub:
+                    sub.is_active = False
+                    db.commit()
+        await state.clear()
+        await message.answer(
+            t(lang, "unsubbed", name=sub_name),
+            reply_markup=main_keyboard(lang),
+        )
+        return
 
-@router.callback_query(F.data == "back_main")
-async def back_to_main(callback: types.CallbackQuery):
-    lang = get_lang(callback.from_user.id)
-    await callback.message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
-    await callback.answer()
+    # Child name tapped from list
+    subscriptions = data.get("subscriptions", [])
+    mode = data.get("mode", "view")
+    sub = next((s for s in subscriptions if s["name"] == text), None)
+
+    if not sub:
+        await state.clear()
+        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        return
+
+    if mode == "unsubscribe":
+        with SessionLocal() as db:
+            s = db.query(ParentSubscription).filter_by(
+                id=sub["sub_id"], telegram_id=message.from_user.id
+            ).first()
+            if s:
+                s.is_active = False
+                db.commit()
+        await state.clear()
+        await message.answer(
+            t(lang, "unsubbed", name=sub["name"]),
+            reply_markup=main_keyboard(lang),
+        )
+        return
+
+    # mode == "view": fetch and show stats
+    await state.update_data(active_sub_id=sub["sub_id"], active_sub_name=sub["name"])
+    try:
+        resp = requests.get(f"{TECH_API}/student-stats/{sub['student_id']}", timeout=10)
+        resp.raise_for_status()
+        stats_data = resp.json()
+        stats_text = format_stats(stats_data, lang)
+    except Exception as e:
+        logger.error("Stats error for student %s: %s", sub["student_id"], e)
+        stats_text = t(lang, "stats_error")
+
+    await message.answer(stats_text, reply_markup=child_keyboard(lang))
 
 
 # ── Stats formatter ───────────────────────────────────────────────────────────

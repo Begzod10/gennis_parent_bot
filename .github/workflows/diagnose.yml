@@ -30,5 +30,23 @@ jobs:
               echo "localhost:$port → $code"
             done
 
-            echo "=== Bot service logs (last errors) ==="
-            journalctl -u gennis_parent_bot -n 20 --no-pager | grep -E "ERROR|Stats error|stats_error|Exception" | head -10
+            echo "=== Bot service logs (all recent) ==="
+            journalctl -u gennis_parent_bot --since "2 hours ago" --no-pager | tail -30
+
+            echo "=== Reproduce stats for student 28 ==="
+            cd /var/www/gennis_parent_bot
+            venv/bin/python -c "
+import requests
+from app.config import TECH_API
+from app.handlers.start import format_stats
+try:
+    r = requests.get(f'{TECH_API}/student-stats/28', timeout=10)
+    print('HTTP', r.status_code)
+    data = r.json()
+    print('Courses:', len(data.get('courses', [])))
+    result = format_stats(data, 'ru')
+    print('OK, length:', len(result))
+    print(result[:300])
+except Exception as e:
+    import traceback; traceback.print_exc()
+" 2>&1

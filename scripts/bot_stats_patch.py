@@ -135,7 +135,7 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
         )
         .where(
             ExerciseSubmission.student_id == student_id,
-            ExerciseSubmission.created_at >= week_ago,
+            ExerciseSubmission.submitted_at >= week_ago,
         )
     )
     w_ex_total, w_ex_correct = weekly_ex_q.one()

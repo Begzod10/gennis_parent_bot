@@ -4,7 +4,7 @@ import telebot
 
 from app.celery_app import celery
 from app.config import TECH_API, BOT_TOKEN
-from app.db import SessionLocal
+from app.db import CelerySession as SessionLocal
 from app.i18n import t
 from app.models import ParentSubscription, UserSettings
 from app.handlers.start import format_stats

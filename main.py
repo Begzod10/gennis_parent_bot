@@ -55,10 +55,19 @@ class _TelegramEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+def _strip_nulls(obj):
+    """Recursively remove None/null from dicts and lists."""
+    if isinstance(obj, dict):
+        return {k: _strip_nulls(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [_strip_nulls(item) for item in obj]
+    return obj
+
+
 def _method_to_dict(method: TelegramMethod) -> dict:
     raw = method.model_dump(mode="python", by_alias=True)
     json_str = json.dumps(raw, cls=_TelegramEncoder)
-    data = {k: v for k, v in json.loads(json_str).items() if v is not None}
+    data = _strip_nulls(json.loads(json_str))
     cls_name = type(method).__name__
     data["method"] = cls_name[0].lower() + cls_name[1:]
     return data
@@ -89,9 +98,13 @@ async def webhook_handler(request: web.Request) -> web.Response:
 
     if session.captured is not None:
         try:
-            return web.json_response(_method_to_dict(session.captured))
+            result = _method_to_dict(session.captured)
+            logger.info("Inline response: method=%s chat_id=%s", result.get("method"), result.get("chat_id"))
+            return web.json_response(result)
         except Exception:
-            logger.exception("Failed to serialize captured method")
+            logger.exception("Failed to serialize captured method %s", type(session.captured).__name__)
+    else:
+        logger.warning("No method captured for update_id=%s", update_data.get("update_id"))
 
     return web.json_response({})
 

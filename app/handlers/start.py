@@ -315,11 +315,28 @@ def format_stats(data: dict, lang: str) -> str:
         text += t(lang, "lessons", done=done, total=total)
         text += t(lang, "exercises", correct=ex.get("correct", 0), total=ex.get("total", 0))
 
-        for p in c.get("projects", []):
-            emoji = status_emoji.get(p.get("status", ""), "📌")
-            grade = t(lang, "grade_label", v=p["grade"]) if p.get("grade") else ""
-            pts = t(lang, "pts_label", v=p["points"]) if p.get("points") else ""
-            text += t(lang, "project_line", emoji=emoji, grade=grade, pts=pts)
+        projects = c.get("projects", [])
+        if projects:
+            counts: dict = {}
+            best_grade = None
+            total_pts = 0
+            for p in projects:
+                st = p.get("status") or "Pending"
+                counts[st] = counts.get(st, 0) + 1
+                if p.get("grade"):
+                    best_grade = p["grade"]
+                if p.get("points"):
+                    total_pts += p["points"]
+
+            parts = []
+            for st, cnt in counts.items():
+                emoji = status_emoji.get(st, "📌")
+                label = cnt if cnt > 1 else ""
+                parts.append(f"{emoji}{label}")
+            summary = " ".join(parts)
+            grade_str = f" | {best_grade}" if best_grade else ""
+            pts_str = f" | +{total_pts}" if total_pts else ""
+            text += f"   🗂 {summary}{grade_str}{pts_str}\n"
 
     return text
 

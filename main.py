@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import AsyncGenerator, Dict, Any, Optional
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
@@ -36,6 +36,17 @@ class InlineSession(BaseSession):
         if self.captured is None:
             self.captured = method
         return None
+
+    async def stream_content(
+        self,
+        url: str,
+        headers: Optional[Dict[str, Any]],
+        timeout: int,
+        chunk_size: int,
+        raise_for_status: bool,
+    ) -> AsyncGenerator[bytes, None]:
+        return
+        yield  # make this an async generator
 
     async def close(self) -> None:
         pass

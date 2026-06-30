@@ -16,11 +16,17 @@ jobs:
           script: |
             BACKEND=/var/www/tech_gennis/backend
 
-            echo "=== bot_stats.py ==="
-            cat $BACKEND/app/api/v1/endpoints/bot_stats.py
+            echo "=== LessonCompletion model ==="
+            cat $BACKEND/app/models/lesson.py
 
-            echo "=== Models (app/models) ==="
-            ls $BACKEND/app/models/ 2>/dev/null || ls $BACKEND/app/db/models/ 2>/dev/null || find $BACKEND/app -name "models.py" -not -path "*/venv/*" | head -3
+            echo "=== ExerciseSubmission model ==="
+            cat $BACKEND/app/models/exercise.py
 
-            echo "=== StudentCourse or StudentLesson model ==="
-            grep -r "class Student" $BACKEND/app --include="*.py" -l 2>/dev/null | head -5
+            echo "=== Ranking model ==="
+            cat $BACKEND/app/models/ranking.py
+
+            echo "=== Student model (columns only) ==="
+            grep -A2 "Column\|class Student\|group_id\|full_name" $BACKEND/app/models/user.py | head -40
+
+            echo "=== Group model ==="
+            cat $BACKEND/app/models/group.py 2>/dev/null | head -40

@@ -14,39 +14,30 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            echo "=== Can server reach Telegram API? ==="
+            echo "=== Telegram API ==="
             curl -s --max-time 10 "https://api.telegram.org/bot8678834398:AAFoW10O6qhpTwQiihJ4utC5p573ySCqllo/getMe" && echo "OK" || echo "BLOCKED"
 
-            echo "=== Stats endpoint via CF (student 28) ==="
-            curl -sv --max-time 15 "https://tech.gennis.uz/api/v1/bot/student-stats/28" 2>&1 | tail -5
+            echo "=== Bot service recent logs ==="
+            journalctl -u gennis_parent_bot --since "3 hours ago" --no-pager | grep -E "ERROR|Stats error|Traceback|Exception|stats_error" | tail -20
 
-            echo "=== Find backend local port ==="
-            ss -tlnp | grep -E "800[0-9]|802[0-9]" || echo "no port found"
-            systemctl list-units --type=service --state=running | grep -i gennis | head -10
-
-            echo "=== Try localhost ports ==="
-            for port in 8062 8000 8001 8080; do
-              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$port/api/v1/bot/student-stats/28")
-              echo "localhost:$port → $code"
-            done
-
-            echo "=== Bot service logs (all recent) ==="
-            journalctl -u gennis_parent_bot --since "2 hours ago" --no-pager | tail -30
-
-            echo "=== Reproduce stats for student 28 ==="
+            echo "=== Reproduce format_stats for student 28 ==="
             cd /var/www/gennis_parent_bot
-            venv/bin/python -c "
-import requests
-from app.config import TECH_API
-from app.handlers.start import format_stats
-try:
-    r = requests.get(f'{TECH_API}/student-stats/28', timeout=10)
-    print('HTTP', r.status_code)
-    data = r.json()
-    print('Courses:', len(data.get('courses', [])))
-    result = format_stats(data, 'ru')
-    print('OK, length:', len(result))
-    print(result[:300])
-except Exception as e:
-    import traceback; traceback.print_exc()
-" 2>&1
+            cat > /tmp/test_stats.py << 'PYEOF'
+            import sys
+            sys.path.insert(0, '/var/www/gennis_parent_bot')
+            import requests
+            from app.config import TECH_API
+            from app.handlers.start import format_stats
+            try:
+                r = requests.get(TECH_API + '/student-stats/28', timeout=10)
+                print('HTTP', r.status_code)
+                data = r.json()
+                print('Courses:', len(data.get('courses', [])))
+                result = format_stats(data, 'ru')
+                print('OK length:', len(result))
+                print(result[:500])
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+            PYEOF
+            venv/bin/python /tmp/test_stats.py 2>&1

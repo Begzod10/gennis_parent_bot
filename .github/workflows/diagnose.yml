@@ -1,0 +1,31 @@
+name: Diagnose Server
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run diagnostics via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: root
+          key: ${{ secrets.DEPLOY_KEY }}
+          script: |
+            echo "=== Port 8064 listening? ==="
+            ss -tlnp | grep 8064 || echo "NOT listening"
+
+            echo "=== Bot service status ==="
+            systemctl status gennis_parent_bot --no-pager | head -5
+
+            echo "=== Recent bot logs ==="
+            journalctl -u gennis_parent_bot -n 20 --no-pager
+
+            echo "=== Can server reach Telegram API? ==="
+            curl -s --max-time 10 -X POST "https://api.telegram.org/bot8678834398:AAFoW10O6qhpTwQiihJ4utC5p573ySCqllo/sendMessage" \
+              -d "chat_id=123456&text=test" && echo "SUCCESS" || echo "FAILED"
+
+            echo "=== DNS resolution for api.telegram.org ==="
+            nslookup api.telegram.org | head -10

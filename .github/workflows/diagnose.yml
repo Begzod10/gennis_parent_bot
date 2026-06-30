@@ -14,18 +14,19 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            echo "=== Deployed git hash ==="
-            cd /var/www/gennis_parent_bot && git log --oneline -2
+            echo "=== Can server reach Telegram API? ==="
+            curl -s --max-time 10 "https://api.telegram.org/bot8678834398:AAFoW10O6qhpTwQiihJ4utC5p573ySCqllo/getMe" && echo "OK" || echo "BLOCKED"
 
-            echo "=== Direct local webhook test ==="
-            curl -s -X POST "http://127.0.0.1:8064/parent-webhook" \
-              -H "Content-Type: application/json" \
-              -d '{"update_id":1,"message":{"message_id":1,"from":{"id":999,"is_bot":false,"first_name":"T","language_code":"ru"},"chat":{"id":999,"type":"private"},"date":1751284000,"text":"/start","entities":[{"offset":0,"length":6,"type":"bot_command"}]}}' \
-              -w "\nHTTP: %{http_code}" 2>&1
+            echo "=== Can server reach tech.gennis.uz (itself via CF)? ==="
+            curl -s --max-time 10 "https://tech.gennis.uz/api/v1/bot/search-student?q=test" | head -5
 
-            echo ""
-            echo "=== Bot logs after test ==="
-            journalctl -u gennis_parent_bot -n 10 --no-pager
+            echo "=== Server IPv6? ==="
+            ip -6 addr show | grep "inet6" | grep -v "::1" | head -3 || echo "No IPv6"
 
-            echo "=== Nginx config for parent-webhook ==="
-            grep -r "parent-webhook\|8064" /etc/nginx/ 2>/dev/null || echo "not found"
+            echo "=== Trigger daily report task ==="
+            cd /var/www/gennis_parent_bot
+            venv/bin/celery -A app.celery_app call app.tasks.send_daily_reports 2>&1
+
+            sleep 15
+            echo "=== Celery worker logs ==="
+            journalctl -u gennis_parent_bot_celery -n 40 --no-pager

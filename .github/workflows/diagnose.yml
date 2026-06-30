@@ -14,18 +14,23 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            echo "=== Port 8064 listening? ==="
+            echo "=== Deployed git hash ==="
+            cd /var/www/gennis_parent_bot && git log --oneline -3
+
+            echo "=== stream_content in main.py ==="
+            grep -n "stream_content\|UNSET\|abstract" /var/www/gennis_parent_bot/main.py || echo "not found"
+
+            echo "=== BaseSession abstract methods ==="
+            python3 -c "
+            import sys; sys.path.insert(0, '/var/www/gennis_parent_bot')
+            import inspect
+            from aiogram.client.session.base import BaseSession
+            abstracts = [name for name, m in inspect.getmembers(BaseSession) if getattr(m, '__isabstractmethod__', False)]
+            print('Abstract methods:', abstracts)
+            "
+
+            echo "=== Port 8064 ==="
             ss -tlnp | grep 8064 || echo "NOT listening"
 
-            echo "=== Bot service status ==="
-            systemctl status gennis_parent_bot --no-pager | head -5
-
-            echo "=== Recent bot logs ==="
-            journalctl -u gennis_parent_bot -n 20 --no-pager
-
-            echo "=== Can server reach Telegram API? ==="
-            curl -s --max-time 10 -X POST "https://api.telegram.org/bot8678834398:AAFoW10O6qhpTwQiihJ4utC5p573ySCqllo/sendMessage" \
-              -d "chat_id=123456&text=test" && echo "SUCCESS" || echo "FAILED"
-
-            echo "=== DNS resolution for api.telegram.org ==="
-            nslookup api.telegram.org | head -10
+            echo "=== Last 5 bot logs ==="
+            journalctl -u gennis_parent_bot -n 5 --no-pager

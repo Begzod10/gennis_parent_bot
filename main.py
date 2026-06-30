@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from aiohttp import web
@@ -14,20 +13,8 @@ from app.handlers.start import router as start_router
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-WEBHOOK_HOST = "https://tech.gennis.uz"
 WEBHOOK_PATH = "/parent-webhook"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
 WEBAPP_PORT = 8064
-
-
-async def on_startup(bot: Bot):
-    await bot.set_webhook(WEBHOOK_URL)
-    logger.info("Webhook set: %s", WEBHOOK_URL)
-
-
-async def on_shutdown(bot: Bot):
-    await bot.delete_webhook()
-    logger.info("Webhook deleted")
 
 
 def main():
@@ -36,15 +23,12 @@ def main():
     dp = Dispatcher(storage=storage)
     dp.include_router(start_router)
 
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-
     app = web.Application()
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
 
-    logger.info("Starting webhook server on port %d", WEBAPP_PORT)
-    web.run_app(app, host="0.0.0.0", port=WEBAPP_PORT)
+    logger.info("Webhook server running on port %d at %s", WEBAPP_PORT, WEBHOOK_PATH)
+    web.run_app(app, host="127.0.0.1", port=WEBAPP_PORT, print=None)
 
 
 if __name__ == "__main__":

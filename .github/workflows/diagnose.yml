@@ -7,9 +7,7 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Run diagnostics via SSH
+      - name: Patch backend and test via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SERVER_IP }}
@@ -20,25 +18,13 @@ jobs:
             BOT_FILE=$BACKEND/app/api/v1/endpoints/bot_stats.py
             PATCH=/var/www/gennis_parent_bot/scripts/bot_stats_patch.py
 
-            echo "=== Backup original ==="
-            cp "$BOT_FILE" "${BOT_FILE}.bak" && echo "backed up"
-
-            echo "=== Copy patch ==="
-            cp "$PATCH" "$BOT_FILE" && echo "copied"
-
-            echo "=== Syntax check ==="
-            cd $BACKEND
-            venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "SYNTAX OK" || (cp "${BOT_FILE}.bak" "$BOT_FILE" && echo "RESTORED - syntax error")
-
-            echo "=== Restart backend ==="
-            systemctl restart tech_gennis_backend
-            sleep 3
-            systemctl is-active tech_gennis_backend
-
-            echo "=== Test new fields ==="
-            curl -s "http://localhost:8062/api/v1/bot/student-stats/28" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-for k in ['daily_points','weekly_points','weekly_rank','monthly_points','monthly_rank','weekly_lessons','weekly_exercises']:
-    print(f'{k}: {d.get(k)}')
-"
+            echo "Backup..."
+            cp "$BOT_FILE" "${BOT_FILE}.bak"
+            echo "Copy patch..."
+            cp "$PATCH" "$BOT_FILE"
+            echo "Syntax check..."
+            cd $BACKEND && venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "OK" || (cp "${BOT_FILE}.bak" "$BOT_FILE" && echo "RESTORED")
+            echo "Restart..."
+            systemctl restart tech_gennis_backend && sleep 3 && systemctl is-active tech_gennis_backend
+            echo "Test..."
+            curl -s "http://localhost:8062/api/v1/bot/student-stats/28" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k+':',d.get(k)) for k in ['daily_points','weekly_points','weekly_rank','monthly_points','weekly_lessons','weekly_exercises']]"

@@ -276,15 +276,20 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
         )
         return
 
-    # mode == "view": fetch and show stats
+    # mode == "view": fetch and show stats (1 retry on failure)
     await state.update_data(active_sub_id=sub["sub_id"], active_sub_name=sub["name"])
-    try:
-        resp = requests.get(f"{TECH_API}/student-stats/{sub['student_id']}", timeout=10)
-        resp.raise_for_status()
-        stats_data = resp.json()
-        stats_text = format_stats(stats_data, lang)
-    except Exception as e:
-        logger.error("Stats error for student %s: %s", sub["student_id"], e)
+    stats_text = None
+    for attempt in range(2):
+        try:
+            resp = requests.get(f"{TECH_API}/student-stats/{sub['student_id']}", timeout=10)
+            resp.raise_for_status()
+            stats_text = format_stats(resp.json(), lang)
+            break
+        except Exception as e:
+            logger.warning("Stats attempt %d failed for student %s: %s", attempt + 1, sub["student_id"], e)
+            if attempt == 0:
+                import time as _time; _time.sleep(1)
+    if stats_text is None:
         stats_text = t(lang, "stats_error")
 
     await message.answer(stats_text, reply_markup=child_keyboard(lang))

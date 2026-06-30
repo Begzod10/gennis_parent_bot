@@ -31,6 +31,12 @@ jobs:
               echo "PostgreSQL restarted"
             fi
 
+            echo "🔗 Ensuring TECH_API points to localhost (bypass Cloudflare)..."
+            if ! grep -q "^TECH_API=" /var/www/gennis_parent_bot/.env 2>/dev/null; then
+              echo "TECH_API=http://localhost:8062/api/v1/bot" >> /var/www/gennis_parent_bot/.env
+              echo "Added TECH_API to .env"
+            fi
+
             echo "⬇️ Pulling latest code..."
             git pull origin master
 

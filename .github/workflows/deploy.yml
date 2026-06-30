@@ -19,6 +19,13 @@ jobs:
             set -e
             cd /var/www/gennis_parent_bot
 
+            echo "🐘 Ensuring PostgreSQL has enough connections..."
+            PG_CONF=$(find /etc/postgresql -name "postgresql.conf" 2>/dev/null | head -1)
+            if [ -n "$PG_CONF" ]; then
+              sed -i 's/^#*\s*max_connections\s*=.*/max_connections = 300/' "$PG_CONF"
+              systemctl reload postgresql 2>/dev/null || systemctl restart postgresql
+            fi
+
             echo "⬇️ Pulling latest code..."
             git pull origin master
 

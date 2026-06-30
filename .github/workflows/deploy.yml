@@ -19,11 +19,16 @@ jobs:
             set -e
             cd /var/www/gennis_parent_bot
 
-            echo "🐘 Ensuring PostgreSQL has enough connections..."
+            echo "🐘 Increasing PostgreSQL max_connections to 300..."
             PG_CONF=$(find /etc/postgresql -name "postgresql.conf" 2>/dev/null | head -1)
             if [ -n "$PG_CONF" ]; then
-              sed -i 's/^#*\s*max_connections\s*=.*/max_connections = 300/' "$PG_CONF"
-              systemctl reload postgresql 2>/dev/null || systemctl restart postgresql
+              CURRENT=$(grep "^max_connections" "$PG_CONF" | head -1)
+              echo "Current: $CURRENT"
+              sed -i "/^max_connections/c\max_connections = 300" "$PG_CONF"
+              echo "New: $(grep '^max_connections' "$PG_CONF")"
+              systemctl restart postgresql
+              sleep 3
+              echo "PostgreSQL restarted"
             fi
 
             echo "⬇️ Pulling latest code..."

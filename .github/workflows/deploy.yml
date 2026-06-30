@@ -28,8 +28,10 @@ jobs:
             echo "🗄️ Running migrations..."
             venv/bin/alembic upgrade head
 
-            echo "🔄 Restarting bot..."
+            echo "🔄 Restarting services..."
             systemctl restart gennis_parent_bot
+            systemctl restart gennis_parent_bot_celery
 
             echo "✅ Deploy complete!"
-            systemctl status gennis_parent_bot --no-pager | head -5
+            systemctl status gennis_parent_bot --no-pager | head -3
+            systemctl status gennis_parent_bot_celery --no-pager | head -3

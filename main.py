@@ -5,7 +5,7 @@ from typing import Optional
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.base import BaseSession, UNSET
+from aiogram.client.session.base import BaseSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods.base import TelegramMethod
@@ -32,7 +32,7 @@ class InlineSession(BaseSession):
         super().__init__()
         self.captured: Optional[TelegramMethod] = None
 
-    async def make_request(self, bot: Bot, method: TelegramMethod, timeout=UNSET):
+    async def make_request(self, bot: Bot, method: TelegramMethod, timeout=None):
         if self.captured is None:
             self.captured = method
         return None

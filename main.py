@@ -1,10 +1,11 @@
 import json
 import logging
+from enum import Enum
 from typing import Optional
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
+from aiogram.client.default import Default as AiogramDefault, DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
@@ -41,11 +42,25 @@ class InlineSession(AiohttpSession):
         pass
 
 
+class _TelegramEncoder(json.JSONEncoder):
+    """Resolves aiogram Default sentinels and Enum values during JSON serialization."""
+
+    _DEFAULTS = {"parse_mode": ParseMode.HTML.value}
+
+    def default(self, obj):
+        if isinstance(obj, AiogramDefault):
+            return self._DEFAULTS.get(obj.name)
+        if isinstance(obj, Enum):
+            return obj.value
+        return super().default(obj)
+
+
 def _method_to_dict(method: TelegramMethod) -> dict:
+    raw = method.model_dump(mode="python", by_alias=True)
+    json_str = json.dumps(raw, cls=_TelegramEncoder)
+    data = {k: v for k, v in json.loads(json_str).items() if v is not None}
     cls_name = type(method).__name__
-    api_method_name = cls_name[0].lower() + cls_name[1:]
-    data = json.loads(method.model_dump_json(exclude_none=True, by_alias=True))
-    data["method"] = api_method_name
+    data["method"] = cls_name[0].lower() + cls_name[1:]
     return data
 
 
@@ -73,7 +88,11 @@ async def webhook_handler(request: web.Request) -> web.Response:
         logger.exception("Error processing update_id=%s", update_data.get("update_id"))
 
     if session.captured is not None:
-        return web.json_response(_method_to_dict(session.captured))
+        try:
+            return web.json_response(_method_to_dict(session.captured))
+        except Exception:
+            logger.exception("Failed to serialize captured method")
+
     return web.json_response({})
 
 

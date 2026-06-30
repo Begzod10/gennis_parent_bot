@@ -17,16 +17,18 @@ jobs:
             echo "=== Can server reach Telegram API? ==="
             curl -s --max-time 10 "https://api.telegram.org/bot8678834398:AAFoW10O6qhpTwQiihJ4utC5p573ySCqllo/getMe" && echo "OK" || echo "BLOCKED"
 
-            echo "=== Can server reach tech.gennis.uz (itself via CF)? ==="
-            curl -s --max-time 10 "https://tech.gennis.uz/api/v1/bot/search-student?q=test" | head -5
+            echo "=== Stats endpoint via CF (student 28) ==="
+            curl -sv --max-time 15 "https://tech.gennis.uz/api/v1/bot/student-stats/28" 2>&1 | tail -5
 
-            echo "=== Server IPv6? ==="
-            ip -6 addr show | grep "inet6" | grep -v "::1" | head -3 || echo "No IPv6"
+            echo "=== Find backend local port ==="
+            ss -tlnp | grep -E "800[0-9]|802[0-9]" || echo "no port found"
+            systemctl list-units --type=service --state=running | grep -i gennis | head -10
 
-            echo "=== Trigger daily report task ==="
-            cd /var/www/gennis_parent_bot
-            venv/bin/celery -A app.celery_app call app.tasks.send_daily_reports 2>&1
+            echo "=== Try localhost ports ==="
+            for port in 8062 8000 8001 8080; do
+              code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://localhost:$port/api/v1/bot/student-stats/28")
+              echo "localhost:$port → $code"
+            done
 
-            sleep 15
-            echo "=== Celery worker logs ==="
-            journalctl -u gennis_parent_bot_celery -n 40 --no-pager
+            echo "=== Bot service logs (last errors) ==="
+            journalctl -u gennis_parent_bot -n 20 --no-pager | grep -E "ERROR|Stats error|stats_error|Exception" | head -10

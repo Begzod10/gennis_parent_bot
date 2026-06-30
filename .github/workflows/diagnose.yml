@@ -14,13 +14,16 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            echo "=== Find tech_gennis_backend location ==="
-            find /var/www /home /opt -maxdepth 3 -name "*.py" 2>/dev/null | xargs grep -l "student.stats\|student_stats" 2>/dev/null | grep -v gennis_parent | head -5
+            BACKEND=/var/www/tech_gennis/backend
 
-            echo "=== systemctl tech_gennis service ==="
-            systemctl cat tech_gennis_backend.service 2>/dev/null | grep -E "WorkingDir|ExecStart" | head -3
+            echo "=== Bot router files ==="
+            find $BACKEND -path "*/bot*" -name "*.py" 2>/dev/null
+            grep -r "student.stats\|student_stats" $BACKEND --include="*.py" -l 2>/dev/null | head -5
 
-            echo "=== Bot student-stats endpoint ==="
-            BACKEND_DIR=$(systemctl show tech_gennis_backend -p WorkingDirectory 2>/dev/null | cut -d= -f2)
-            echo "Backend at: $BACKEND_DIR"
-            find "$BACKEND_DIR" -name "*.py" 2>/dev/null | xargs grep -l "student.stats\|bot" 2>/dev/null | head -5
+            echo "=== Bot endpoint code ==="
+            BOT_FILE=$(grep -r "student.stats\|student_stats" $BACKEND --include="*.py" -l 2>/dev/null | head -1)
+            echo "File: $BOT_FILE"
+            cat "$BOT_FILE" 2>/dev/null
+
+            echo "=== Models with weekly/attendance/lesson ==="
+            grep -r "weekly_points\|attendance\|StudentLesson\|student_lesson\|LessonCompletion" $BACKEND --include="*.py" -l 2>/dev/null | head -5

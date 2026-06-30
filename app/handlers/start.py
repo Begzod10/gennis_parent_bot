@@ -302,7 +302,16 @@ def format_stats(data: dict, lang: str) -> str:
         + t(lang, "separator")
     )
 
-    status_emoji = {"Submitted": "⏳", "Approved": "✅", "Rejected": "❌", "Pending": "🔄"}
+    status_emoji = {
+        "Approved": "✅", "Submitted": "⏳", "Pending": "⏳",
+        "Rejected": "❌", None: "📝", "": "📝",
+    }
+    status_label = {
+        "uz": {"Approved": "Tasdiqlangan", "Submitted": "Tekshirilmoqda",
+               "Pending": "Tekshirilmoqda", "Rejected": "Rad etilgan", None: "Topshirilmagan", "": "Topshirilmagan"},
+        "ru": {"Approved": "Принято", "Submitted": "На проверке",
+               "Pending": "На проверке", "Rejected": "Отклонено", None: "Не сдано", "": "Не сдано"},
+    }
 
     for c in data.get("courses", []):
         done = c.get("lessons_completed", 0)
@@ -318,25 +327,21 @@ def format_stats(data: dict, lang: str) -> str:
         projects = c.get("projects", [])
         if projects:
             counts: dict = {}
-            best_grade = None
             total_pts = 0
             for p in projects:
-                st = p.get("status") or "Pending"
+                st = p.get("status") or None
                 counts[st] = counts.get(st, 0) + 1
-                if p.get("grade"):
-                    best_grade = p["grade"]
                 if p.get("points"):
                     total_pts += p["points"]
 
+            labels = status_label.get(lang, status_label["uz"])
             parts = []
             for st, cnt in counts.items():
-                emoji = status_emoji.get(st, "📌")
-                label = cnt if cnt > 1 else ""
-                parts.append(f"{emoji}{label}")
-            summary = " ".join(parts)
-            grade_str = f" | {best_grade}" if best_grade else ""
-            pts_str = f" | +{total_pts}" if total_pts else ""
-            text += f"   🗂 {summary}{grade_str}{pts_str}\n"
+                emoji = status_emoji.get(st, "📝")
+                lbl = labels.get(st, st or "")
+                parts.append(f"{emoji} {lbl}×{cnt}" if cnt > 1 else f"{emoji} {lbl}")
+            pts_str = f" (+{total_pts} ball)" if total_pts else ""
+            text += f"   🗂 {', '.join(parts)}{pts_str}\n"
 
     return text
 

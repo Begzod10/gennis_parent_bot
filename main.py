@@ -1,11 +1,11 @@
 import json
 import logging
-from typing import AsyncGenerator, Dict, Any, Optional
+from typing import Optional
 
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
-from aiogram.client.session.base import BaseSession
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
 from aiogram.methods.base import TelegramMethod
@@ -21,11 +21,11 @@ WEBHOOK_PATH = "/parent-webhook"
 WEBAPP_PORT = 8064
 
 
-class InlineSession(BaseSession):
-    """Captures the first bot API call and returns it in the webhook HTTP response body.
+class InlineSession(AiohttpSession):
+    """Captures the first bot method call to return inline in the webhook response.
 
-    This bypasses the need for the server to make outbound connections to api.telegram.org.
-    Telegram executes the method itself after receiving it in the 200 response.
+    Subclasses AiohttpSession (concrete) to avoid abstract-method errors.
+    Overrides make_request so no outbound connection to api.telegram.org is made.
     """
 
     def __init__(self) -> None:
@@ -37,26 +37,15 @@ class InlineSession(BaseSession):
             self.captured = method
         return None
 
-    async def stream_content(
-        self,
-        url: str,
-        headers: Optional[Dict[str, Any]],
-        timeout: int,
-        chunk_size: int,
-        raise_for_status: bool,
-    ) -> AsyncGenerator[bytes, None]:
-        return
-        yield  # make this an async generator
-
     async def close(self) -> None:
         pass
 
 
 def _method_to_dict(method: TelegramMethod) -> dict:
     cls_name = type(method).__name__
-    api_method = cls_name[0].lower() + cls_name[1:]
+    api_method_name = cls_name[0].lower() + cls_name[1:]
     data = json.loads(method.model_dump_json(exclude_none=True, by_alias=True))
-    data["method"] = api_method
+    data["method"] = api_method_name
     return data
 
 
@@ -81,9 +70,7 @@ async def webhook_handler(request: web.Request) -> web.Response:
         update = Update.model_validate(update_data)
         await dp.feed_update(bot, update)
     except Exception:
-        logger.exception("Error processing update %s", update_data.get("update_id"))
-    finally:
-        await bot.session.close()
+        logger.exception("Error processing update_id=%s", update_data.get("update_id"))
 
     if session.captured is not None:
         return web.json_response(_method_to_dict(session.captured))

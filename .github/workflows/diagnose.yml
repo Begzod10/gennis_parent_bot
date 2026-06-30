@@ -16,14 +16,11 @@ jobs:
           script: |
             BACKEND=/var/www/tech_gennis/backend
 
-            echo "=== Bot router files ==="
-            find $BACKEND -path "*/bot*" -name "*.py" 2>/dev/null
-            grep -r "student.stats\|student_stats" $BACKEND --include="*.py" -l 2>/dev/null | head -5
+            echo "=== bot_stats.py ==="
+            cat $BACKEND/app/api/v1/endpoints/bot_stats.py
 
-            echo "=== Bot endpoint code ==="
-            BOT_FILE=$(grep -r "student.stats\|student_stats" $BACKEND --include="*.py" -l 2>/dev/null | head -1)
-            echo "File: $BOT_FILE"
-            cat "$BOT_FILE" 2>/dev/null
+            echo "=== Models (app/models) ==="
+            ls $BACKEND/app/models/ 2>/dev/null || ls $BACKEND/app/db/models/ 2>/dev/null || find $BACKEND/app -name "models.py" -not -path "*/venv/*" | head -3
 
-            echo "=== Models with weekly/attendance/lesson ==="
-            grep -r "weekly_points\|attendance\|StudentLesson\|student_lesson\|LessonCompletion" $BACKEND --include="*.py" -l 2>/dev/null | head -5
+            echo "=== StudentCourse or StudentLesson model ==="
+            grep -r "class Student" $BACKEND/app --include="*.py" -l 2>/dev/null | head -5

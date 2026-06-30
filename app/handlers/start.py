@@ -8,9 +8,11 @@ from aiogram.fsm.state import State, StatesGroup
 
 from app.config import TECH_API
 from app.db import SessionLocal
-from app.models import ParentSubscription
+from app.i18n import t
+from app.models import ParentSubscription, UserSettings
 from app.keyboards import (
     main_keyboard,
+    language_keyboard,
     student_search_results_keyboard,
     subscriptions_keyboard,
     unsubscribe_keyboard,
@@ -24,41 +26,80 @@ class SearchStates(StatesGroup):
     waiting_for_name = State()
 
 
-# ── /start ──────────────────────────────────────────────────────────────────
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def get_lang(telegram_id: int) -> str:
+    with SessionLocal() as db:
+        settings = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
+        return settings.lang if settings else "uz"
+
+
+def set_lang(telegram_id: int, lang: str):
+    with SessionLocal() as db:
+        settings = db.query(UserSettings).filter_by(telegram_id=telegram_id).first()
+        if settings:
+            settings.lang = lang
+        else:
+            db.add(UserSettings(telegram_id=telegram_id, lang=lang))
+        db.commit()
+
+
+# ── /start ───────────────────────────────────────────────────────────────────
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer(
-        "👋 Salom! <b>Gennis Parent Bot</b>ga xush kelibsiz!\n\n"
-        "Bu bot orqali farzandingizning o'qish natijalarini\n"
-        "har kuni avtomatik olasiz — hech qanday parol kerak emas.\n\n"
-        "👇 Boshlash uchun farzandingizni qidiring:",
-        parse_mode="HTML",
-        reply_markup=main_keyboard
+        t("uz", "choose_lang"),
+        reply_markup=language_keyboard()
     )
 
 
-# ── Search ───────────────────────────────────────────────────────────────────
-
-@router.message(F.text == "🔍 Farzandimni qidirish")
-@router.callback_query(F.data == "add_new")
-async def ask_child_name(event, state: FSMContext):
-    message = event if isinstance(event, types.Message) else event.message
-    if isinstance(event, types.CallbackQuery):
-        await event.answer()
-    await state.set_state(SearchStates.waiting_for_name)
-    await message.answer(
-        "👤 Farzandingizning <b>ism yoki familiyasini</b> kiriting:",
+@router.callback_query(F.data.startswith("setlang_"))
+async def set_language(callback: types.CallbackQuery):
+    lang = callback.data.split("_")[1]
+    set_lang(callback.from_user.id, lang)
+    await callback.message.answer(
+        t(lang, "lang_set"),
         parse_mode="HTML"
     )
+    await callback.message.answer(
+        t(lang, "welcome"),
+        parse_mode="HTML",
+        reply_markup=main_keyboard(lang)
+    )
+    await callback.answer()
+
+
+# ── Language switch ───────────────────────────────────────────────────────────
+
+@router.message(F.text.in_(["🌐 Til: O'zbek", "🌐 Язык: Русский"]))
+async def switch_language(message: types.Message):
+    await message.answer(t("uz", "choose_lang"), reply_markup=language_keyboard())
+
+
+# ── Search ────────────────────────────────────────────────────────────────────
+
+@router.message(F.text.in_(["🔍 Farzandimni qidirish", "🔍 Найти ребёнка"]))
+@router.callback_query(F.data == "add_new")
+async def ask_child_name(event, state: FSMContext):
+    is_cb = isinstance(event, types.CallbackQuery)
+    tg_id = event.from_user.id
+    lang = get_lang(tg_id)
+    message = event.message if is_cb else event
+    if is_cb:
+        await event.answer()
+    await state.set_state(SearchStates.waiting_for_name)
+    await message.answer(t(lang, "ask_name"), parse_mode="HTML")
 
 
 @router.message(SearchStates.waiting_for_name)
 async def handle_name_search(message: types.Message, state: FSMContext):
+    lang = get_lang(message.from_user.id)
     query = message.text.strip()
+
     if len(query) < 2:
-        await message.answer("⚠️ Kamida 2 ta harf kiriting.")
+        await message.answer(t(lang, "search_too_short"))
         return
 
     try:
@@ -67,29 +108,25 @@ async def handle_name_search(message: types.Message, state: FSMContext):
         students = resp.json()
     except Exception as e:
         logger.error("Search error: %s", e)
-        await message.answer("⚠️ Qidirishda xatolik yuz berdi. Keyinroq urinib ko'ring.")
+        await message.answer(t(lang, "search_error"))
         await state.clear()
         return
 
     if not students:
-        await message.answer(
-            f"😔 <b>{query}</b> bo'yicha o'quvchi topilmadi.\n"
-            "Ism yoki familiyani tekshirib qayta kiriting.",
-            parse_mode="HTML"
-        )
+        await message.answer(t(lang, "not_found", q=query), parse_mode="HTML")
         return
 
     await state.clear()
     await message.answer(
-        f"✅ <b>{len(students)}</b> ta o'quvchi topildi.\n"
-        "Farzandingizni tanlang 👇",
+        t(lang, "found", n=len(students)),
         parse_mode="HTML",
-        reply_markup=student_search_results_keyboard(students)
+        reply_markup=student_search_results_keyboard(students, lang)
     )
 
 
 @router.callback_query(F.data.startswith("subscribe_"))
 async def subscribe_to_student(callback: types.CallbackQuery):
+    lang = get_lang(callback.from_user.id)
     parts = callback.data.split("_", 2)
     student_id = int(parts[1])
     student_name = parts[2] if len(parts) > 2 else "O'quvchi"
@@ -100,169 +137,148 @@ async def subscribe_to_student(callback: types.CallbackQuery):
             student_platform_id=student_id,
             is_active=True
         ).first()
-
         if existing:
-            await callback.answer("✅ Siz allaqachon bu o'quvchiga obuna bo'lgansiz!", show_alert=True)
+            await callback.answer(t(lang, "already_subscribed"), show_alert=True)
             return
 
-        sub = ParentSubscription(
+        db.add(ParentSubscription(
             telegram_id=callback.from_user.id,
             parent_name=callback.from_user.full_name,
             student_platform_id=student_id,
             student_name=student_name,
-        )
-        db.add(sub)
+        ))
         db.commit()
 
     await callback.message.answer(
-        f"🎉 <b>{student_name}</b> uchun kunlik hisobot yoqildi!\n\n"
-        "📅 Har kuni soat <b>20:00</b> da o'qish natijalari yuboriladi.",
+        t(lang, "subscribed", name=student_name),
         parse_mode="HTML",
-        reply_markup=main_keyboard
+        reply_markup=main_keyboard(lang)
     )
     await callback.answer()
 
 
 @router.callback_query(F.data == "cancel_search")
 async def cancel_search(callback: types.CallbackQuery, state: FSMContext):
+    lang = get_lang(callback.from_user.id)
     await state.clear()
-    await callback.message.answer("❌ Qidiruv bekor qilindi.", reply_markup=main_keyboard)
+    await callback.message.answer(t(lang, "cancel"), reply_markup=main_keyboard(lang))
     await callback.answer()
 
 
-# ── My subscriptions ─────────────────────────────────────────────────────────
+# ── My children ───────────────────────────────────────────────────────────────
 
-@router.message(F.text == "👨‍👧 Farzandlarim ro'yxati")
+@router.message(F.text.in_(["👨‍👧 Farzandlarim ro'yxati", "👨‍👧 Мои дети"]))
 async def my_subscriptions(message: types.Message):
+    lang = get_lang(message.from_user.id)
     with SessionLocal() as db:
         subs = db.query(ParentSubscription).filter_by(
-            telegram_id=message.from_user.id,
-            is_active=True
+            telegram_id=message.from_user.id, is_active=True
         ).all()
 
     if not subs:
-        await message.answer(
-            "📭 Siz hali hech qanday o'quvchiga obuna bo'lmagansiz.\n"
-            "🔍 Farzandingizni qidiring:",
-            reply_markup=main_keyboard
-        )
+        await message.answer(t(lang, "no_subs"), reply_markup=main_keyboard(lang))
         return
 
     await message.answer(
-        f"👨‍👧 Sizning farzandlaringiz ({len(subs)} ta).\n"
-        "Natijalarni ko'rish uchun tanlang 👇",
-        reply_markup=subscriptions_keyboard(subs)
+        t(lang, "my_children_title", n=len(subs)),
+        reply_markup=subscriptions_keyboard(subs, lang)
     )
 
 
 @router.callback_query(F.data.startswith("view_stats_"))
 async def view_student_stats(callback: types.CallbackQuery):
+    lang = get_lang(callback.from_user.id)
     student_id = int(callback.data.split("_")[-1])
+
     try:
         resp = requests.get(f"{TECH_API}/student-stats/{student_id}", timeout=10)
         resp.raise_for_status()
         data = resp.json()
     except Exception as e:
-        logger.error("Stats fetch error: %s", e)
-        await callback.answer("⚠️ Ma'lumot olishda xatolik.", show_alert=True)
+        logger.error("Stats error: %s", e)
+        await callback.answer(t(lang, "stats_error"), show_alert=True)
         return
 
-    await callback.message.answer(
-        _format_stats(data),
-        parse_mode="HTML"
-    )
+    await callback.message.answer(format_stats(data, lang), parse_mode="HTML")
     await callback.answer()
 
 
-# ── Unsubscribe ──────────────────────────────────────────────────────────────
+# ── Unsubscribe ───────────────────────────────────────────────────────────────
 
-@router.message(F.text == "❌ Obunani bekor qilish")
+@router.message(F.text.in_(["❌ Obunani bekor qilish", "❌ Отменить подписку"]))
 async def unsubscribe_menu(message: types.Message):
+    lang = get_lang(message.from_user.id)
     with SessionLocal() as db:
         subs = db.query(ParentSubscription).filter_by(
-            telegram_id=message.from_user.id,
-            is_active=True
+            telegram_id=message.from_user.id, is_active=True
         ).all()
 
     if not subs:
-        await message.answer("📭 Faol obunalar yo'q.", reply_markup=main_keyboard)
+        await message.answer(t(lang, "no_active_subs"), reply_markup=main_keyboard(lang))
         return
 
-    await message.answer(
-        "🗑 Qaysi farzanddan obunani bekor qilmoqchisiz?",
-        reply_markup=unsubscribe_keyboard(subs)
-    )
+    await message.answer(t(lang, "ask_unsub"), reply_markup=unsubscribe_keyboard(subs, lang))
 
 
 @router.callback_query(F.data.startswith("unsub_"))
 async def confirm_unsubscribe(callback: types.CallbackQuery):
+    lang = get_lang(callback.from_user.id)
     sub_id = int(callback.data.split("_")[1])
+
     with SessionLocal() as db:
         sub = db.query(ParentSubscription).filter_by(
-            id=sub_id,
-            telegram_id=callback.from_user.id
+            id=sub_id, telegram_id=callback.from_user.id
         ).first()
+        name = sub.student_name if sub else "O'quvchi"
         if sub:
             sub.is_active = False
             db.commit()
-            name = sub.student_name
-        else:
-            name = "O'quvchi"
 
     await callback.message.answer(
-        f"✅ <b>{name}</b> uchun kunlik hisobot bekor qilindi.",
+        t(lang, "unsubbed", name=name),
         parse_mode="HTML",
-        reply_markup=main_keyboard
+        reply_markup=main_keyboard(lang)
     )
     await callback.answer()
 
 
 @router.callback_query(F.data == "back_main")
 async def back_to_main(callback: types.CallbackQuery):
-    await callback.message.answer("🏠 Asosiy menyu:", reply_markup=main_keyboard)
+    lang = get_lang(callback.from_user.id)
+    await callback.message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
     await callback.answer()
 
 
-# ── Stats formatter ──────────────────────────────────────────────────────────
+# ── Stats formatter ───────────────────────────────────────────────────────────
 
-def _format_stats(data: dict) -> str:
+def format_stats(data: dict, lang: str) -> str:
     name = data.get("name") or "O'quvchi"
-    total_pts = data.get("total_points", 0)
-    rank = data.get("global_rank", 0)
-    weekly = data.get("weekly_points", 0)
-    courses = data.get("courses", [])
-
     text = (
-        f"📊 <b>{name}</b> natijalari\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
-        f"🏆 Umumiy ball: <b>{total_pts}</b>\n"
-        f"📅 Haftalik ball: <b>{weekly}</b>\n"
-        f"🥇 Reyting: <b>#{rank}</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━\n"
+        t(lang, "stats_title", name=name)
+        + t(lang, "total_pts", v=data.get("total_points", 0))
+        + t(lang, "weekly_pts", v=data.get("weekly_points", 0))
+        + t(lang, "rank", v=data.get("global_rank", 0))
+        + t(lang, "separator")
     )
 
-    for c in courses:
+    status_emoji = {"Submitted": "⏳", "Approved": "✅", "Rejected": "❌", "Pending": "🔄"}
+
+    for c in data.get("courses", []):
         done = c.get("lessons_completed", 0)
         total = c.get("lessons_total", 0)
         pct = round(done / total * 100) if total else 0
         ex = c.get("exercises", {})
-        ex_correct = ex.get("correct", 0)
-        ex_total = ex.get("total", 0)
-        progress_bar = _progress_bar(pct)
+        bar = _progress_bar(pct)
 
-        text += (
-            f"\n📘 <b>{c['title']}</b>\n"
-            f"   {progress_bar} {pct}%\n"
-            f"   📖 Darslar: {done}/{total}\n"
-            f"   ✏️ Mashqlar: {ex_correct}/{ex_total} to'g'ri\n"
-        )
+        text += f"\n📘 <b>{c['title']}</b>  {bar} {pct}%\n"
+        text += t(lang, "lessons", done=done, total=total)
+        text += t(lang, "exercises", correct=ex.get("correct", 0), total=ex.get("total", 0))
 
-        projects = c.get("projects", [])
-        status_emoji = {"Submitted": "⏳", "Approved": "✅", "Rejected": "❌", "Pending": "🔄"}
-        for p in projects:
+        for p in c.get("projects", []):
             emoji = status_emoji.get(p.get("status", ""), "📌")
-            grade = f" | Baho: {p['grade']}" if p.get("grade") else ""
-            text += f"   {emoji} Loyiha{grade}\n"
+            grade = t(lang, "grade_label", v=p["grade"]) if p.get("grade") else ""
+            pts = t(lang, "pts_label", v=p["points"]) if p.get("points") else ""
+            text += t(lang, "project_line", emoji=emoji, grade=grade, pts=pts)
 
     return text
 

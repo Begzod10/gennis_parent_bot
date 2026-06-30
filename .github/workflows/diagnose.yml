@@ -15,22 +15,17 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             echo "=== Deployed git hash ==="
-            cd /var/www/gennis_parent_bot && git log --oneline -3
+            cd /var/www/gennis_parent_bot && git log --oneline -2
 
-            echo "=== stream_content in main.py ==="
-            grep -n "stream_content\|UNSET\|abstract" /var/www/gennis_parent_bot/main.py || echo "not found"
+            echo "=== Direct local webhook test ==="
+            curl -s -X POST "http://127.0.0.1:8064/parent-webhook" \
+              -H "Content-Type: application/json" \
+              -d '{"update_id":1,"message":{"message_id":1,"from":{"id":999,"is_bot":false,"first_name":"T","language_code":"ru"},"chat":{"id":999,"type":"private"},"date":1751284000,"text":"/start","entities":[{"offset":0,"length":6,"type":"bot_command"}]}}' \
+              -w "\nHTTP: %{http_code}" 2>&1
 
-            echo "=== BaseSession abstract methods ==="
-            python3 -c "
-            import sys; sys.path.insert(0, '/var/www/gennis_parent_bot')
-            import inspect
-            from aiogram.client.session.base import BaseSession
-            abstracts = [name for name, m in inspect.getmembers(BaseSession) if getattr(m, '__isabstractmethod__', False)]
-            print('Abstract methods:', abstracts)
-            "
+            echo ""
+            echo "=== Bot logs after test ==="
+            journalctl -u gennis_parent_bot -n 10 --no-pager
 
-            echo "=== Port 8064 ==="
-            ss -tlnp | grep 8064 || echo "NOT listening"
-
-            echo "=== Last 5 bot logs ==="
-            journalctl -u gennis_parent_bot -n 5 --no-pager
+            echo "=== Nginx config for parent-webhook ==="
+            grep -r "parent-webhook\|8064" /etc/nginx/ 2>/dev/null || echo "not found"

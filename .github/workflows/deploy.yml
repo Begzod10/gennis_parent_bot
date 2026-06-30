@@ -28,6 +28,47 @@ jobs:
             echo "🗄️ Running migrations..."
             venv/bin/alembic upgrade head
 
+            echo "⚙️ Setting up systemd services..."
+
+            # Bot service
+            cat > /etc/systemd/system/gennis_parent_bot.service << 'SERVICE'
+            [Unit]
+            Description=Gennis Parent Bot
+            After=network.target postgresql.service redis.service
+
+            [Service]
+            Type=simple
+            WorkingDirectory=/var/www/gennis_parent_bot
+            EnvironmentFile=/var/www/gennis_parent_bot/.env
+            ExecStart=/var/www/gennis_parent_bot/venv/bin/python main.py
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICE
+
+            # Celery Beat service
+            cat > /etc/systemd/system/gennis_parent_bot_celery.service << 'SERVICE'
+            [Unit]
+            Description=Gennis Parent Bot - Celery Beat Worker
+            After=network.target redis.service postgresql.service
+
+            [Service]
+            Type=simple
+            WorkingDirectory=/var/www/gennis_parent_bot
+            EnvironmentFile=/var/www/gennis_parent_bot/.env
+            ExecStart=/var/www/gennis_parent_bot/venv/bin/celery -A app.celery_app worker --beat --loglevel=info
+            Restart=always
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            SERVICE
+
+            systemctl daemon-reload
+            systemctl enable gennis_parent_bot gennis_parent_bot_celery
+
             echo "🔄 Restarting services..."
             systemctl restart gennis_parent_bot
             systemctl restart gennis_parent_bot_celery

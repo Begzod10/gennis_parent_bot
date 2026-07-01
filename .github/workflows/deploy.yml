@@ -87,6 +87,17 @@ jobs:
             systemctl daemon-reload
             systemctl enable gennis_parent_bot gennis_parent_bot_celery
 
+            echo "🔧 Patching tech_gennis backend with weekly/monthly stats..."
+            BOT_FILE=/var/www/tech_gennis/backend/app/api/v1/endpoints/bot_stats.py
+            PATCH=/var/www/gennis_parent_bot/scripts/bot_stats_patch.py
+            if [ -f "$PATCH" ] && [ -f "$BOT_FILE" ]; then
+              cp "$PATCH" "$BOT_FILE"
+              rm -f /var/www/tech_gennis/backend/app/api/v1/endpoints/__pycache__/bot_stats*.pyc
+              systemctl restart tech_gennis_backend
+              sleep 3
+              echo "Backend patched and restarted"
+            fi
+
             echo "🔄 Restarting services..."
             systemctl restart gennis_parent_bot
             systemctl restart gennis_parent_bot_celery

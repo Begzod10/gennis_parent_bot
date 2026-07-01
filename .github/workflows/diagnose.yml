@@ -14,33 +14,20 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            export PGPASSWORD="or9T#u-x5PZo--"
-            DB=tech_platform
-            PG="psql -U postgres -d $DB -t -A"
+            BACKEND=/var/www/tech_gennis/backend
+            BOT_FILE=$BACKEND/app/api/v1/endpoints/bot_stats.py
+            PATCH=/var/www/gennis_parent_bot/scripts/bot_stats_patch.py
 
-            echo "=== Ranking-like tables ==="
-            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename ILIKE '%rank%' OR tablename ILIKE '%lesson%' OR tablename ILIKE '%exercise%' OR tablename ILIKE '%student%') ORDER BY tablename;"
+            echo "Apply patch..."
+            cp "$PATCH" "$BOT_FILE"
+            rm -f $BACKEND/app/api/v1/endpoints/__pycache__/bot_stats*.pyc
+            cd $BACKEND && venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "SYNTAX OK"
+            systemctl restart tech_gennis_backend && sleep 4 && systemctl is-active tech_gennis_backend
 
-            echo "=== student_courses columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='student_courses' ORDER BY ordinal_position;"
-
-            echo "=== Rankings columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"
-
-            echo "=== lesson_completions columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='lesson_completions' ORDER BY ordinal_position;"
-
-            echo "=== exercise_submissions columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='exercise_submissions' ORDER BY ordinal_position;"
-
-            echo "=== Ranking sample for student 28 ==="
-            $PG -c "SELECT student_id, daily_points, weekly_points, monthly_points, global_rank, weekly_rank, monthly_rank FROM rankings WHERE student_id=28;"
-
-            echo "=== Recent lesson_completions for student 28 ==="
-            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC NULLS LAST LIMIT 5;"
-
-            echo "=== lesson_completions count where completed_at is NULL ==="
-            $PG -c "SELECT COUNT(*) FROM lesson_completions WHERE student_id=28 AND completed_at IS NULL;"
-
-            echo "=== Recent exercise_submissions for student 28 ==="
-            $PG -c "SELECT id, submitted_at, is_correct FROM exercise_submissions WHERE student_id=28 ORDER BY submitted_at DESC LIMIT 5;"
+            echo "Test student 28..."
+            curl -s "http://localhost:8062/api/v1/bot/student-stats/28" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+for k in ['daily_points','daily_lessons','daily_exercises','weekly_points','weekly_lessons','weekly_exercises','monthly_points','monthly_lessons','monthly_exercises','global_rank','weekly_rank','monthly_rank']:
+    print(k+':', d.get(k))
+"

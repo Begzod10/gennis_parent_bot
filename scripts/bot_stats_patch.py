@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, Integer, case
+from sqlalchemy import select, func, case
 from app.dependencies import get_db
 from app.models.user import Student
 from app.models.lesson import LessonCompletion, Lesson
@@ -11,6 +11,24 @@ from app.models.course import Course, student_courses
 from app.models.ranking import Ranking
 
 router = APIRouter()
+
+_TZ = timezone(timedelta(hours=5))  # Tashkent UTC+5
+
+
+def _day_start() -> datetime:
+    now = datetime.now(_TZ)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def _week_start() -> datetime:
+    now = datetime.now(_TZ)
+    monday = now - timedelta(days=now.weekday())
+    return monday.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+
+
+def _month_start() -> datetime:
+    now = datetime.now(_TZ)
+    return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
 
 
 @router.get("/search-student")
@@ -110,35 +128,72 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
                 "points": pts,
             })
 
-    # Ranking
+    # Ranking (for total_points and global_rank only — period aggregates unreliable)
     ranking_q = await db.execute(
         select(Ranking).where(Ranking.student_id == student_id)
     )
     ranking = ranking_q.scalar_one_or_none()
 
-    # Weekly stats (last 7 days)
-    week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    day_start = _day_start()
+    week_start = _week_start()
+    month_start = _month_start()
 
-    weekly_lessons_q = await db.execute(
-        select(func.count(LessonCompletion.id))
-        .where(
-            LessonCompletion.student_id == student_id,
-            LessonCompletion.completed_at >= week_ago,
-        )
-    )
-    weekly_lessons = weekly_lessons_q.scalar() or 0
-
-    weekly_ex_q = await db.execute(
+    # Daily stats: exercise score sum + lesson count today
+    daily_ex_q = await db.execute(
         select(
+            func.coalesce(func.sum(ExerciseSubmission.score), 0),
             func.count(ExerciseSubmission.id),
             func.sum(case((ExerciseSubmission.is_correct == True, 1), else_=0))
         )
-        .where(
-            ExerciseSubmission.student_id == student_id,
-            ExerciseSubmission.submitted_at >= week_ago,
-        )
+        .where(ExerciseSubmission.student_id == student_id,
+               ExerciseSubmission.submitted_at >= day_start)
     )
-    w_ex_total, w_ex_correct = weekly_ex_q.one()
+    daily_score, daily_ex_total, daily_ex_correct = daily_ex_q.one()
+
+    daily_lessons_q = await db.execute(
+        select(func.count(LessonCompletion.id))
+        .where(LessonCompletion.student_id == student_id,
+               LessonCompletion.completed_at >= day_start)
+    )
+    daily_lessons = daily_lessons_q.scalar() or 0
+
+    # Weekly stats: since Monday
+    weekly_ex_q = await db.execute(
+        select(
+            func.coalesce(func.sum(ExerciseSubmission.score), 0),
+            func.count(ExerciseSubmission.id),
+            func.sum(case((ExerciseSubmission.is_correct == True, 1), else_=0))
+        )
+        .where(ExerciseSubmission.student_id == student_id,
+               ExerciseSubmission.submitted_at >= week_start)
+    )
+    weekly_score, w_ex_total, w_ex_correct = weekly_ex_q.one()
+
+    weekly_lessons_q = await db.execute(
+        select(func.count(LessonCompletion.id))
+        .where(LessonCompletion.student_id == student_id,
+               LessonCompletion.completed_at >= week_start)
+    )
+    weekly_lessons = weekly_lessons_q.scalar() or 0
+
+    # Monthly stats: since 1st of month
+    monthly_ex_q = await db.execute(
+        select(
+            func.coalesce(func.sum(ExerciseSubmission.score), 0),
+            func.count(ExerciseSubmission.id),
+            func.sum(case((ExerciseSubmission.is_correct == True, 1), else_=0))
+        )
+        .where(ExerciseSubmission.student_id == student_id,
+               ExerciseSubmission.submitted_at >= month_start)
+    )
+    monthly_score, m_ex_total, m_ex_correct = monthly_ex_q.one()
+
+    monthly_lessons_q = await db.execute(
+        select(func.count(LessonCompletion.id))
+        .where(LessonCompletion.student_id == student_id,
+               LessonCompletion.completed_at >= month_start)
+    )
+    monthly_lessons = monthly_lessons_q.scalar() or 0
 
     courses_data = []
     for c in courses:
@@ -158,15 +213,26 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
         "name": student.full_name or student.username or "",
         "total_points": ranking.total_points if ranking else 0,
         "global_rank": ranking.global_rank if ranking else 0,
-        "daily_points": ranking.daily_points if ranking else 0,
-        "weekly_points": ranking.weekly_points if ranking else 0,
+        # Period points computed from exercise scores (ranking table aggregates unreliable)
+        "daily_points": int(daily_score or 0),
+        "daily_lessons": daily_lessons,
+        "daily_exercises": {
+            "total": int(daily_ex_total or 0),
+            "correct": int(daily_ex_correct or 0),
+        },
+        "weekly_points": int(weekly_score or 0),
         "weekly_rank": ranking.weekly_rank if ranking else 0,
-        "monthly_points": ranking.monthly_points if ranking else 0,
-        "monthly_rank": ranking.monthly_rank if ranking else 0,
         "weekly_lessons": weekly_lessons,
         "weekly_exercises": {
             "total": int(w_ex_total or 0),
             "correct": int(w_ex_correct or 0),
+        },
+        "monthly_points": int(monthly_score or 0),
+        "monthly_rank": ranking.monthly_rank if ranking else 0,
+        "monthly_lessons": monthly_lessons,
+        "monthly_exercises": {
+            "total": int(m_ex_total or 0),
+            "correct": int(m_ex_correct or 0),
         },
         "courses": courses_data,
     }

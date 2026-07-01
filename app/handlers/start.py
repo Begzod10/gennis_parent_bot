@@ -406,9 +406,14 @@ def _fetch_stats(student_id: int) -> dict | None:
 
 def _format_today(data: dict, lang: str) -> str:
     name = data.get("name") or "O'quvchi"
+    d_ex = data.get("daily_exercises") or {}
     return (
         t(lang, "today_title", name=name)
         + t(lang, "today_pts", v=data.get("daily_points", 0))
+        + t(lang, "weekly_lessons_detail", n=data.get("daily_lessons", 0))
+        + t(lang, "weekly_ex_detail",
+            correct=d_ex.get("correct", 0),
+            total=d_ex.get("total", 0))
         + t(lang, "today_rank", v=data.get("global_rank", 0))
     )
 
@@ -429,8 +434,13 @@ def _format_weekly(data: dict, lang: str) -> str:
 
 def _format_monthly(data: dict, lang: str) -> str:
     name = data.get("name") or "O'quvchi"
+    m_ex = data.get("monthly_exercises") or {}
     return (
         t(lang, "monthly_title", name=name)
         + t(lang, "monthly_pts", v=data.get("monthly_points", 0))
+        + t(lang, "weekly_lessons_detail", n=data.get("monthly_lessons", 0))
+        + t(lang, "weekly_ex_detail",
+            correct=m_ex.get("correct", 0),
+            total=m_ex.get("total", 0))
         + t(lang, "monthly_rank", v=data.get("monthly_rank", 0))
     )

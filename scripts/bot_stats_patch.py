@@ -7,6 +7,7 @@ from app.models.user import Student
 from app.models.lesson import LessonCompletion, Lesson
 from app.models.exercise import ExerciseSubmission, Exercise
 from app.models.submission import Submission
+from app.models.project import Project
 from app.models.course import Course, student_courses
 from app.models.ranking import Ranking
 
@@ -107,13 +108,15 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
         for cid, total, correct in ex_q.all():
             exercises_by_course[cid] = {"total": total, "correct": int(correct or 0)}
 
-    # Project submissions per course
+    # Project submissions per course — read status/grade from projects table
+    # because submit_project only updates projects.status, not submissions.status
     projects_by_course: dict = {}
     if course_ids:
         sub_q = await db.execute(
-            select(Lesson.course_id, Submission.status, Submission.grade,
-                   Submission.points_earned, Lesson.title)
+            select(Lesson.course_id, Project.status, Project.grade,
+                   Project.points_earned, Lesson.title)
             .join(Submission, Submission.lesson_id == Lesson.id)
+            .join(Project, Project.id == Submission.project_id)
             .where(
                 Submission.student_id == student_id,
                 Lesson.course_id.in_(course_ids)

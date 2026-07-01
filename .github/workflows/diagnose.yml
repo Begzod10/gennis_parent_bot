@@ -19,23 +19,14 @@ jobs:
             echo "DB: $DB"
             PG="psql -U postgres -d $DB -t -A"
 
-            echo "=== Find Avazbek student ID ==="
-            $PG -c "SELECT id, full_name FROM students WHERE full_name ILIKE '%Avazbek%' LIMIT 5;"
+            echo "=== All tables ==="
+            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename;"
 
-            echo "=== Ranking columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"
+            echo "=== Student tables sample ==="
+            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename ILIKE '%student%' ORDER BY tablename;"
 
-            echo "=== Ranking sample (top 3 by daily_points) ==="
-            $PG -c "SELECT student_id, daily_points, weekly_points, monthly_points, global_rank, weekly_rank, monthly_rank FROM rankings ORDER BY daily_points DESC LIMIT 3;"
+            echo "=== Ranking-like tables ==="
+            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename ILIKE '%rank%' ORDER BY tablename;"
 
-            echo "=== lesson_completions columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='lesson_completions' ORDER BY ordinal_position;"
-
-            echo "=== Recent lesson_completions for student 28 ==="
-            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC NULLS LAST LIMIT 5;"
-
-            echo "=== exercise_submissions columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='exercise_submissions' ORDER BY ordinal_position;"
-
-            echo "=== Recent exercise_submissions for student 28 ==="
-            $PG -c "SELECT id, submitted_at, is_correct FROM exercise_submissions WHERE student_id=28 ORDER BY submitted_at DESC LIMIT 5;"
+            echo "=== Lesson-like tables ==="
+            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename ILIKE '%lesson%' OR tablename ILIKE '%exercise%') ORDER BY tablename;"

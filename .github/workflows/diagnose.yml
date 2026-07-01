@@ -15,9 +15,32 @@ jobs:
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
             export PGPASSWORD="or9T#u-x5PZo--"
+            DB=tech_platform
+            PG="psql -U postgres -d $DB -t -A"
 
-            echo "=== All databases ==="
-            psql -U postgres -t -A -c "SELECT datname FROM pg_database WHERE datname NOT IN ('template0','template1') ORDER BY datname;"
+            echo "=== Ranking-like tables ==="
+            $PG -c "SELECT tablename FROM pg_tables WHERE schemaname='public' AND (tablename ILIKE '%rank%' OR tablename ILIKE '%lesson%' OR tablename ILIKE '%exercise%' OR tablename ILIKE '%student%') ORDER BY tablename;"
 
-            echo "=== tech_gennis .env DB URL ==="
-            grep -i "database\|db_url\|postgres\|sql" /var/www/tech_gennis/backend/.env 2>/dev/null | head -5
+            echo "=== student_courses columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='student_courses' ORDER BY ordinal_position;"
+
+            echo "=== Rankings columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"
+
+            echo "=== lesson_completions columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='lesson_completions' ORDER BY ordinal_position;"
+
+            echo "=== exercise_submissions columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='exercise_submissions' ORDER BY ordinal_position;"
+
+            echo "=== Ranking sample for student 28 ==="
+            $PG -c "SELECT student_id, daily_points, weekly_points, monthly_points, global_rank, weekly_rank, monthly_rank FROM rankings WHERE student_id=28;"
+
+            echo "=== Recent lesson_completions for student 28 ==="
+            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC NULLS LAST LIMIT 5;"
+
+            echo "=== lesson_completions count where completed_at is NULL ==="
+            $PG -c "SELECT COUNT(*) FROM lesson_completions WHERE student_id=28 AND completed_at IS NULL;"
+
+            echo "=== Recent exercise_submissions for student 28 ==="
+            $PG -c "SELECT id, submitted_at, is_correct FROM exercise_submissions WHERE student_id=28 ORDER BY submitted_at DESC LIMIT 5;"

@@ -18,9 +18,16 @@ jobs:
             BOT_FILE=$BACKEND/app/api/v1/endpoints/bot_stats.py
             PATCH=/var/www/gennis_parent_bot/scripts/bot_stats_patch.py
 
-            echo "Apply fixed patch..."
+            echo "Patch file grep submitted_at:"
+            grep "submitted_at" "$PATCH" && echo "FOUND" || echo "NOT FOUND - patch is old"
+
+            echo "Current bot_stats.py grep:"
+            grep "submitted_at\|created_at" "$BOT_FILE"
+
+            echo "Apply patch..."
             cp "$PATCH" "$BOT_FILE"
-            cd $BACKEND && venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "SYNTAX OK" || (cp "${BOT_FILE}.bak" "$BOT_FILE" && echo "RESTORED")
-            systemctl restart tech_gennis_backend && sleep 3 && systemctl is-active tech_gennis_backend
+            rm -f $BACKEND/app/api/v1/endpoints/__pycache__/bot_stats*.pyc
+            cd $BACKEND && venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "SYNTAX OK"
+            systemctl restart tech_gennis_backend && sleep 4 && systemctl is-active tech_gennis_backend
             echo "Test..."
             curl -s "http://localhost:8062/api/v1/bot/student-stats/28" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k+':',d.get(k)) for k in ['daily_points','weekly_points','weekly_rank','monthly_points','weekly_lessons','weekly_exercises']]"

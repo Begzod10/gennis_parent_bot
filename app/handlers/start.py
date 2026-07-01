@@ -17,6 +17,9 @@ router = Router()
 
 _BACK_TEXTS = ("⬅️ Ortga", "⬅️ Назад")
 _UNSUB_TEXTS = ("❌ Obunani bekor qilish", "❌ Отменить подписку")
+_TODAY_TEXTS = ("☀️ Bugun", "☀️ Сегодня")
+_WEEKLY_TEXTS = ("📅 Hafta", "📅 Неделя")
+_MONTHLY_TEXTS = ("📆 Oy", "📆 Месяц")
 
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
@@ -251,6 +254,24 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
         )
         return
 
+    # Period detail buttons
+    if text in _TODAY_TEXTS or text in _WEEKLY_TEXTS or text in _MONTHLY_TEXTS:
+        student_id = data.get("active_sub_id_platform")
+        sub_name = data.get("active_sub_name", "")
+        if student_id:
+            api_data = _fetch_stats(student_id)
+            if api_data:
+                if text in _TODAY_TEXTS:
+                    detail = _format_today(api_data, lang)
+                elif text in _WEEKLY_TEXTS:
+                    detail = _format_weekly(api_data, lang)
+                else:
+                    detail = _format_monthly(api_data, lang)
+                await message.answer(detail, reply_markup=child_keyboard(lang))
+                return
+        await message.answer(t(lang, "stats_error"), reply_markup=child_keyboard(lang))
+        return
+
     # Child name tapped from list
     subscriptions = data.get("subscriptions", [])
     mode = data.get("mode", "view")
@@ -277,20 +298,13 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
         return
 
     # mode == "view": fetch and show stats (1 retry on failure)
-    await state.update_data(active_sub_id=sub["sub_id"], active_sub_name=sub["name"])
-    stats_text = None
-    for attempt in range(2):
-        try:
-            resp = requests.get(f"{TECH_API}/student-stats/{sub['student_id']}", timeout=10)
-            resp.raise_for_status()
-            stats_text = format_stats(resp.json(), lang)
-            break
-        except Exception as e:
-            logger.warning("Stats attempt %d failed for student %s: %s", attempt + 1, sub["student_id"], e)
-            if attempt == 0:
-                import time as _time; _time.sleep(1)
-    if stats_text is None:
-        stats_text = t(lang, "stats_error")
+    await state.update_data(
+        active_sub_id=sub["sub_id"],
+        active_sub_name=sub["name"],
+        active_sub_id_platform=sub["student_id"],
+    )
+    api_data = _fetch_stats(sub["student_id"])
+    stats_text = format_stats(api_data, lang) if api_data else t(lang, "stats_error")
 
     await message.answer(stats_text, reply_markup=child_keyboard(lang))
 
@@ -361,3 +375,48 @@ def format_stats(data: dict, lang: str) -> str:
 def _progress_bar(pct: int) -> str:
     filled = round(pct / 10)
     return "█" * filled + "░" * (10 - filled)
+
+
+def _fetch_stats(student_id: int) -> dict | None:
+    for attempt in range(2):
+        try:
+            resp = requests.get(f"{TECH_API}/student-stats/{student_id}", timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            logger.warning("Stats fetch attempt %d failed for %s: %s", attempt + 1, student_id, e)
+            if attempt == 0:
+                import time as _time; _time.sleep(1)
+    return None
+
+
+def _format_today(data: dict, lang: str) -> str:
+    name = data.get("name") or "O'quvchi"
+    return (
+        t(lang, "today_title", name=name)
+        + t(lang, "today_pts", v=data.get("daily_points", 0))
+        + t(lang, "today_rank", v=data.get("global_rank", 0))
+    )
+
+
+def _format_weekly(data: dict, lang: str) -> str:
+    name = data.get("name") or "O'quvchi"
+    w_ex = data.get("weekly_exercises") or {}
+    return (
+        t(lang, "weekly_title", name=name)
+        + t(lang, "weekly_lessons_detail", n=data.get("weekly_lessons", 0))
+        + t(lang, "weekly_ex_detail",
+            correct=w_ex.get("correct", 0),
+            total=w_ex.get("total", 0))
+        + t(lang, "weekly_pts_detail", v=data.get("weekly_points", 0))
+        + t(lang, "weekly_rank_detail", v=data.get("weekly_rank", 0))
+    )
+
+
+def _format_monthly(data: dict, lang: str) -> str:
+    name = data.get("name") or "O'quvchi"
+    return (
+        t(lang, "monthly_title", name=name)
+        + t(lang, "monthly_pts", v=data.get("monthly_points", 0))
+        + t(lang, "monthly_rank", v=data.get("monthly_rank", 0))
+    )

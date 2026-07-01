@@ -31,6 +31,11 @@ def results_keyboard(names: list, lang: str) -> ReplyKeyboardMarkup:
 def child_keyboard(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
+            [
+                KeyboardButton(text=t(lang, "btn_today")),
+                KeyboardButton(text=t(lang, "btn_weekly")),
+                KeyboardButton(text=t(lang, "btn_monthly")),
+            ],
             [KeyboardButton(text=t(lang, "btn_unsubscribe"))],
             [KeyboardButton(text=t(lang, "btn_back"))],
         ],

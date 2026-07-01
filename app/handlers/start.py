@@ -299,11 +299,18 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
 
 def format_stats(data: dict, lang: str) -> str:
     name = data.get("name") or "O'quvchi"
+    w_ex = data.get("weekly_exercises") or {}
     text = (
         t(lang, "stats_title", name=name)
-        + t(lang, "total_pts", v=data.get("total_points", 0))
-        + t(lang, "weekly_pts", v=data.get("weekly_points", 0))
-        + t(lang, "rank", v=data.get("global_rank", 0))
+        + t(lang, "total_pts", v=data.get("total_points", 0), rank=data.get("global_rank", 0))
+        + t(lang, "weekly_header")
+        + t(lang, "weekly_activity",
+            lessons=data.get("weekly_lessons", 0),
+            correct=w_ex.get("correct", 0),
+            total=w_ex.get("total", 0))
+        + t(lang, "weekly_score",
+            pts=data.get("weekly_points", 0),
+            rank=data.get("weekly_rank", 0))
         + t(lang, "separator")
     )
 

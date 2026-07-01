@@ -394,6 +394,67 @@ def _progress_bar(pct: int) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 
+def format_weekly_report(data: dict, lang: str) -> str:
+    name = data.get("name") or "O'quvchi"
+    w_ex = data.get("weekly_exercises") or {}
+
+    status_emoji = {"Approved": "✅", "Submitted": "⏳", "Pending": "⏳", "Rejected": "❌", None: "📝", "": "📝"}
+    status_label = {
+        "uz": {"Approved": "Tasdiqlangan", "Submitted": "Tekshirilmoqda",
+               "Pending": "Tekshirilmoqda", "Rejected": "Rad etilgan",
+               None: "Topshirilmagan", "": "Topshirilmagan"},
+        "ru": {"Approved": "Принято", "Submitted": "На проверке",
+               "Pending": "На проверке", "Rejected": "Отклонено",
+               None: "Не сдано", "": "Не сдано"},
+    }
+
+    text = (
+        t(lang, "weekly_report_header", name=name)
+        + t(lang, "weekly_report_total",
+            total=data.get("total_points", 0),
+            rank=data.get("global_rank", 0))
+        + t(lang, "weekly_report_activity",
+            lessons=data.get("weekly_lessons", 0),
+            correct=w_ex.get("correct", 0),
+            total=w_ex.get("total", 0),
+            pts=data.get("weekly_points", 0),
+            wrank=data.get("weekly_rank", 0))
+        + t(lang, "separator")
+    )
+
+    # All-time project summary across all courses
+    all_projects = [p for c in data.get("courses", []) for p in c.get("projects", [])]
+    if all_projects:
+        counts: dict = {}
+        total_pts = 0
+        for p in all_projects:
+            st = p.get("status") or None
+            counts[st] = counts.get(st, 0) + 1
+            if p.get("points"):
+                total_pts += p["points"]
+
+        labels = status_label.get(lang, status_label["uz"])
+        parts = []
+        for st, cnt in counts.items():
+            emoji = status_emoji.get(st, "📝")
+            lbl = labels.get(st, st or "")
+            parts.append(f"{emoji} {lbl}×{cnt}" if cnt > 1 else f"{emoji} {lbl}")
+        pts_str = f"  (+{total_pts} ball)" if total_pts else ""
+        text += t(lang, "weekly_report_projects") + f"   {', '.join(parts)}{pts_str}\n"
+    else:
+        text += t(lang, "weekly_report_no_projects")
+
+    # Per-course exercise scores
+    text += t(lang, "separator")
+    for c in data.get("courses", []):
+        ex = c.get("exercises", {})
+        if ex.get("total", 0) > 0:
+            pct = round(ex["correct"] / ex["total"] * 100)
+            text += f"📘 <b>{c['title']}</b>: {ex['correct']}/{ex['total']} ✏️ ({pct}%)\n"
+
+    return text
+
+
 def _fetch_stats(student_id: int) -> dict | None:
     for attempt in range(2):
         try:

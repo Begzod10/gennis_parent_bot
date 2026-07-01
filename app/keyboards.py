@@ -23,7 +23,8 @@ def main_keyboard(lang: str) -> ReplyKeyboardMarkup:
 
 
 def results_keyboard(names: list, lang: str) -> ReplyKeyboardMarkup:
-    rows = [[KeyboardButton(text=name)] for name in names]
+    btns = [KeyboardButton(text=name) for name in names]
+    rows = [btns[i:i + 2] for i in range(0, len(btns), 2)]
     rows.append([KeyboardButton(text=t(lang, "btn_back"))])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 

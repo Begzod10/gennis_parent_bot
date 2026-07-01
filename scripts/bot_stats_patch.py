@@ -10,6 +10,8 @@ from app.models.submission import Submission
 from app.models.project import Project
 from app.models.course import Course, student_courses
 from app.models.ranking import Ranking
+from app.models.achievement import Achievement
+from app.models.student_achievement import StudentAchievement
 
 router = APIRouter()
 
@@ -198,6 +200,19 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
     )
     monthly_lessons = monthly_lessons_q.scalar() or 0
 
+    # Last 3 achievements earned by the student
+    ach_q = await db.execute(
+        select(Achievement.name, Achievement.icon)
+        .join(StudentAchievement, StudentAchievement.achievement_id == Achievement.id)
+        .where(StudentAchievement.student_id == student_id)
+        .order_by(StudentAchievement.earned_at.desc())
+        .limit(3)
+    )
+    recent_achievements = [
+        {"name": name, "icon": icon or "🏅"}
+        for name, icon in ach_q.all()
+    ]
+
     courses_data = []
     for c in courses:
         cid = c.id
@@ -238,4 +253,5 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
             "correct": int(m_ex_correct or 0),
         },
         "courses": courses_data,
+        "achievements": recent_achievements,
     }

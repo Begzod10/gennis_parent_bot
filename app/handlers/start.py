@@ -345,6 +345,13 @@ def format_stats(data: dict, lang: str) -> str:
         + t(lang, "separator")
     )
 
+    achievements = data.get("achievements", [])
+    if achievements:
+        badges = "  ".join(
+            f"{a['icon']} {a['name']}" for a in achievements
+        )
+        text += t(lang, "achievements_line", badges=badges)
+
     status_emoji = {
         "Approved": "✅", "Submitted": "⏳", "Pending": "⏳",
         "Rejected": "❌", None: "📝", "": "📝",

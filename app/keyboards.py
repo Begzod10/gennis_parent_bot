@@ -33,7 +33,10 @@ def child_keyboard(lang: str) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [
+                KeyboardButton(text=t(lang, "btn_overview")),
                 KeyboardButton(text=t(lang, "btn_today")),
+            ],
+            [
                 KeyboardButton(text=t(lang, "btn_weekly")),
                 KeyboardButton(text=t(lang, "btn_monthly")),
             ],

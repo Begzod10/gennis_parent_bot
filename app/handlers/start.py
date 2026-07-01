@@ -17,6 +17,7 @@ router = Router()
 
 _BACK_TEXTS = ("⬅️ Ortga", "⬅️ Назад")
 _UNSUB_TEXTS = ("❌ Obunani bekor qilish", "❌ Отменить подписку")
+_OVERVIEW_TEXTS = ("📊 Umumiy", "📊 Общая")
 _TODAY_TEXTS = ("☀️ Bugun", "☀️ Сегодня")
 _WEEKLY_TEXTS = ("📅 Hafta", "📅 Неделя")
 _MONTHLY_TEXTS = ("📆 Oy", "📆 Месяц")
@@ -269,13 +270,15 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
         return
 
     # Period detail buttons
-    if text in _TODAY_TEXTS or text in _WEEKLY_TEXTS or text in _MONTHLY_TEXTS:
+    if text in _OVERVIEW_TEXTS or text in _TODAY_TEXTS or text in _WEEKLY_TEXTS or text in _MONTHLY_TEXTS:
         student_id = data.get("active_sub_id_platform")
         sub_name = data.get("active_sub_name", "")
         if student_id:
             api_data = _fetch_stats(student_id)
             if api_data:
-                if text in _TODAY_TEXTS:
+                if text in _OVERVIEW_TEXTS:
+                    detail = format_stats(api_data, lang)
+                elif text in _TODAY_TEXTS:
                     detail = _format_today(api_data, lang)
                 elif text in _WEEKLY_TEXTS:
                     detail = _format_weekly(api_data, lang)

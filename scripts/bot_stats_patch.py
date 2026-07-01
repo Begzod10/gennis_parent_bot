@@ -255,3 +255,63 @@ async def get_student_stats(student_id: int, db: AsyncSession = Depends(get_db))
         "courses": courses_data,
         "achievements": recent_achievements,
     }
+
+
+@router.get("/weekly-rankings")
+async def get_weekly_rankings(db: AsyncSession = Depends(get_db)):
+    """Global weekly leaderboard for the Sunday report.
+
+    Returns all students ranked by:
+    - weekly_exercise_points: SUM of exercise_submissions.score since Monday (Tashkent)
+    - project_points: SUM of projects.points_earned WHERE status='Approved' (all-time)
+    """
+    week_start = _week_start()
+
+    # Weekly exercise ranking — all students with score > 0 this week
+    ex_q = await db.execute(
+        select(
+            ExerciseSubmission.student_id,
+            Student.full_name,
+            func.coalesce(func.sum(ExerciseSubmission.score), 0).label("pts"),
+        )
+        .join(Student, Student.id == ExerciseSubmission.student_id)
+        .where(ExerciseSubmission.submitted_at >= week_start)
+        .group_by(ExerciseSubmission.student_id, Student.full_name)
+        .order_by(func.sum(ExerciseSubmission.score).desc())
+    )
+    exercise_ranking = []
+    for rank, (sid, name, pts) in enumerate(ex_q.all(), start=1):
+        exercise_ranking.append({
+            "rank": rank,
+            "student_id": sid,
+            "name": name or f"Student #{sid}",
+            "weekly_points": int(pts),
+        })
+
+    # Project ranking — all-time approved project points
+    proj_q = await db.execute(
+        select(
+            Project.student_id,
+            Student.full_name,
+            func.count(Project.id).label("approved_count"),
+            func.coalesce(func.sum(Project.points_earned), 0).label("pts"),
+        )
+        .join(Student, Student.id == Project.student_id)
+        .where(Project.status == "Approved")
+        .group_by(Project.student_id, Student.full_name)
+        .order_by(func.sum(Project.points_earned).desc())
+    )
+    project_ranking = []
+    for rank, (sid, name, approved, pts) in enumerate(proj_q.all(), start=1):
+        project_ranking.append({
+            "rank": rank,
+            "student_id": sid,
+            "name": name or f"Student #{sid}",
+            "approved_count": int(approved),
+            "total_points": int(pts),
+        })
+
+    return {
+        "exercise_ranking": exercise_ranking,
+        "project_ranking": project_ranking,
+    }

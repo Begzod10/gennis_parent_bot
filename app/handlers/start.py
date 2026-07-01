@@ -462,6 +462,76 @@ def format_weekly_report(data: dict, lang: str) -> str:
     return text
 
 
+def format_weekly_rankings(rankings: dict, my_student_ids: list, lang: str) -> str:
+    """Build a personalized weekly leaderboard message.
+
+    Shows top 20 in each category. If a parent's child is outside top 20,
+    appends their entry below a separator so parents always see their child.
+    """
+    ex_all = rankings.get("exercise_ranking", [])
+    proj_all = rankings.get("project_ranking", [])
+    my_ids = set(my_student_ids)
+
+    def _medal(rank: int) -> str:
+        return {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, "  ")
+
+    text = t(lang, "rankings_header")
+
+    # Exercise ranking
+    text += t(lang, "rankings_ex_title")
+    if not ex_all:
+        text += t(lang, "rankings_no_ex")
+    else:
+        top20_ex_ids = set()
+        for row in ex_all[:20]:
+            top20_ex_ids.add(row["student_id"])
+            text += t(lang, "rankings_ex_row",
+                      medal=_medal(row["rank"]),
+                      rank=row["rank"],
+                      name=row["name"],
+                      pts=row["weekly_points"])
+        # Append children outside top 20
+        outside = [r for r in ex_all if r["student_id"] in my_ids and r["student_id"] not in top20_ex_ids]
+        if outside:
+            text += t(lang, "rankings_separator")
+            for row in outside:
+                text += t(lang, "rankings_my_child_ex",
+                          rank=row["rank"],
+                          name=row["name"],
+                          pts=row["weekly_points"])
+        # Children with no exercises this week
+        no_activity = [sid for sid in my_ids if not any(r["student_id"] == sid for r in ex_all)]
+        for sid in no_activity:
+            text += t(lang, "rankings_separator")
+            text += t(lang, "rankings_my_child_ex", rank="—", name=f"#{sid}", pts=0)
+
+    # Project ranking
+    text += t(lang, "rankings_proj_title")
+    if not proj_all:
+        text += t(lang, "rankings_no_proj")
+    else:
+        top20_proj_ids = set()
+        for row in proj_all[:20]:
+            top20_proj_ids.add(row["student_id"])
+            text += t(lang, "rankings_proj_row",
+                      medal=_medal(row["rank"]),
+                      rank=row["rank"],
+                      name=row["name"],
+                      approved=row["approved_count"],
+                      pts=row["total_points"])
+        outside = [r for r in proj_all if r["student_id"] in my_ids and r["student_id"] not in top20_proj_ids]
+        if outside:
+            text += t(lang, "rankings_separator")
+            for row in outside:
+                text += t(lang, "rankings_my_child_proj",
+                          rank=row["rank"],
+                          name=row["name"],
+                          approved=row["approved_count"],
+                          pts=row["total_points"])
+
+    return text
+
+
 def _fetch_stats(student_id: int) -> dict | None:
     for attempt in range(2):
         try:

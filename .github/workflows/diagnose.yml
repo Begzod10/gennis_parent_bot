@@ -14,20 +14,28 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            BACKEND=/var/www/tech_gennis/backend
-            BOT_FILE=$BACKEND/app/api/v1/endpoints/bot_stats.py
-            PATCH=/var/www/gennis_parent_bot/scripts/bot_stats_patch.py
+            PGPASS="or9T#u-x5PZo--"
+            export PGPASSWORD="$PGPASS"
+            DB=tech_gennis_db
+            PG="psql -U postgres -d $DB -t -A"
 
-            echo "Patch file grep submitted_at:"
-            grep "submitted_at" "$PATCH" && echo "FOUND" || echo "NOT FOUND - patch is old"
+            echo "=== Find Avazbek student ID ==="
+            $PG -c "SELECT id, full_name FROM students WHERE full_name ILIKE '%Avazbek%' LIMIT 5;"
 
-            echo "Current bot_stats.py grep:"
-            grep "submitted_at\|created_at" "$BOT_FILE"
+            echo "=== Ranking table sample (top 3 by daily_points) ==="
+            $PG -c "SELECT student_id, daily_points, weekly_points, monthly_points, global_rank, weekly_rank, monthly_rank FROM rankings ORDER BY daily_points DESC LIMIT 3;"
 
-            echo "Apply patch..."
-            cp "$PATCH" "$BOT_FILE"
-            rm -f $BACKEND/app/api/v1/endpoints/__pycache__/bot_stats*.pyc
-            cd $BACKEND && venv/bin/python -m py_compile app/api/v1/endpoints/bot_stats.py && echo "SYNTAX OK"
-            systemctl restart tech_gennis_backend && sleep 4 && systemctl is-active tech_gennis_backend
-            echo "Test..."
-            curl -s "http://localhost:8062/api/v1/bot/student-stats/28" | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k+':',d.get(k)) for k in ['daily_points','weekly_points','weekly_rank','monthly_points','weekly_lessons','weekly_exercises']]"
+            echo "=== LessonCompletion sample for student 28 ==="
+            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC LIMIT 5;"
+
+            echo "=== LessonCompletion columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='lesson_completions' ORDER BY ordinal_position;"
+
+            echo "=== ExerciseSubmission columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='exercise_submissions' ORDER BY ordinal_position;"
+
+            echo "=== Recent ExerciseSubmissions for student 28 ==="
+            $PG -c "SELECT id, submitted_at, is_correct FROM exercise_submissions WHERE student_id=28 ORDER BY submitted_at DESC LIMIT 5;"
+
+            echo "=== Rankings columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"

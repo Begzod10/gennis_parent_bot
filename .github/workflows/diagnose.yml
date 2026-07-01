@@ -14,28 +14,28 @@ jobs:
           username: root
           key: ${{ secrets.DEPLOY_KEY }}
           script: |
-            PGPASS="or9T#u-x5PZo--"
-            export PGPASSWORD="$PGPASS"
-            DB=tech_gennis_db
+            export PGPASSWORD="or9T#u-x5PZo--"
+            DB=$(psql -U postgres -t -A -c "SELECT datname FROM pg_database WHERE datname NOT IN ('postgres','template0','template1') LIMIT 1;")
+            echo "DB: $DB"
             PG="psql -U postgres -d $DB -t -A"
 
             echo "=== Find Avazbek student ID ==="
             $PG -c "SELECT id, full_name FROM students WHERE full_name ILIKE '%Avazbek%' LIMIT 5;"
 
-            echo "=== Ranking table sample (top 3 by daily_points) ==="
+            echo "=== Ranking columns ==="
+            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"
+
+            echo "=== Ranking sample (top 3 by daily_points) ==="
             $PG -c "SELECT student_id, daily_points, weekly_points, monthly_points, global_rank, weekly_rank, monthly_rank FROM rankings ORDER BY daily_points DESC LIMIT 3;"
 
-            echo "=== LessonCompletion sample for student 28 ==="
-            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC LIMIT 5;"
-
-            echo "=== LessonCompletion columns ==="
+            echo "=== lesson_completions columns ==="
             $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='lesson_completions' ORDER BY ordinal_position;"
 
-            echo "=== ExerciseSubmission columns ==="
+            echo "=== Recent lesson_completions for student 28 ==="
+            $PG -c "SELECT id, completed_at FROM lesson_completions WHERE student_id=28 ORDER BY completed_at DESC NULLS LAST LIMIT 5;"
+
+            echo "=== exercise_submissions columns ==="
             $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='exercise_submissions' ORDER BY ordinal_position;"
 
-            echo "=== Recent ExerciseSubmissions for student 28 ==="
+            echo "=== Recent exercise_submissions for student 28 ==="
             $PG -c "SELECT id, submitted_at, is_correct FROM exercise_submissions WHERE student_id=28 ORDER BY submitted_at DESC LIMIT 5;"
-
-            echo "=== Rankings columns ==="
-            $PG -c "SELECT column_name, data_type FROM information_schema.columns WHERE table_name='rankings' ORDER BY ordinal_position;"

@@ -231,8 +231,22 @@ async def handle_child_action(message: types.Message, state: FSMContext) -> None
     data = await state.get_data()
 
     if text in _BACK_TEXTS:
-        await state.clear()
-        await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
+        if data.get("active_sub_id"):
+            # viewing a specific child → go back to the children list
+            subscriptions = data.get("subscriptions", [])
+            names = [s["name"] for s in subscriptions]
+            await state.update_data(
+                active_sub_id=None,
+                active_sub_name="",
+                active_sub_id_platform=None,
+            )
+            await message.answer(
+                t(lang, "my_children_title", n=len(names)),
+                reply_markup=results_keyboard(names, lang),
+            )
+        else:
+            await state.clear()
+            await message.answer(t(lang, "main_menu"), reply_markup=main_keyboard(lang))
         return
 
     # Unsubscribe button when a specific child is being viewed

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from enum import Enum
 from typing import Optional
 
@@ -109,9 +110,38 @@ async def webhook_handler(request: web.Request) -> web.Response:
     return web.json_response({})
 
 
+INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "")
+
+
+async def game_session_complete_handler(request: web.Request) -> web.Response:
+    """Receives fire-and-forget triggers from tech_platform when a game
+    session is completed. Validates the shared secret then enqueues the
+    per-parent delivery task on celery so this handler can return in
+    milliseconds and tech_platform never waits on Telegram round-trips.
+    """
+    if not INTERNAL_SECRET:
+        return web.json_response({"error": "not_configured"}, status=503)
+    if request.headers.get("X-Internal-Secret") != INTERNAL_SECRET:
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad_json"}, status=400)
+    session_id = body.get("session_id")
+    if not isinstance(session_id, int):
+        return web.json_response({"error": "session_id required"}, status=400)
+    # Import here so celery client is only loaded when this route is hit
+    # — the webhook handler above must not pay the celery import cost.
+    from app.celery_app import celery
+    celery.send_task("app.tasks.send_game_session_report", args=[session_id])
+    logger.info("Enqueued game session report task session_id=%d", session_id)
+    return web.json_response({"queued": True})
+
+
 def main() -> None:
     app = web.Application()
     app.router.add_post(WEBHOOK_PATH, webhook_handler)
+    app.router.add_post("/internal/game-session-complete", game_session_complete_handler)
     logger.info("Webhook server running on port %d at %s", WEBAPP_PORT, WEBHOOK_PATH)
     web.run_app(app, host="127.0.0.1", port=WEBAPP_PORT, print=None)
 

@@ -74,6 +74,16 @@ TEXTS = {
         "rankings_no_proj": "Hali tasdiqlangan loyiha yo'q\n",
         "choose_lang": "🌐 Tilni tanlang / Выберите язык:",
         "lang_set": "✅ Til o'zgartirildi: <b>O'zbek</b>",
+        # Game session report keys (immediate + daily rollup)
+        "gs_header": "🎮 <b>O'yin sessiyasi tugadi</b>\n━━━━━━━━━━━━━━━━━━━\n",
+        "gs_session_title": "📌 <b>{title}</b>\n",
+        "gs_child_line": "👤 <b>{name}</b>\n",
+        "gs_rank_line": "🏆 O'rin: <b>#{rank}</b> / {total}\n",
+        "gs_score_line": "⭐ Ball: <b>{pts}</b>  |  ✏️ {correct}/{total} to'g'ri\n",
+        "gs_no_answers": "ℹ️ Farzandingiz bu sessiyada javob bermadi.\n",
+        "gs_daily_header": "\n🎮 <b>Bugungi o'yinlar</b>\n━━━━━━━━━━━━━━━━━━━\n",
+        "gs_daily_child_header": "\n👤 <b>{name}</b>\n",
+        "gs_daily_session_line": "  • <i>{title}</i> — #{rank}/{total}, {pts} ball\n",
     },
     "ru": {
         "welcome": (
@@ -150,6 +160,16 @@ TEXTS = {
         "rankings_no_proj": "Одобренных проектов пока нет\n",
         "choose_lang": "🌐 Tilni tanlang / Выберите язык:",
         "lang_set": "✅ Язык изменён: <b>Русский</b>",
+        # Game session report keys (immediate + daily rollup)
+        "gs_header": "🎮 <b>Игровая сессия завершена</b>\n━━━━━━━━━━━━━━━━━━━\n",
+        "gs_session_title": "📌 <b>{title}</b>\n",
+        "gs_child_line": "👤 <b>{name}</b>\n",
+        "gs_rank_line": "🏆 Место: <b>#{rank}</b> / {total}\n",
+        "gs_score_line": "⭐ Балл: <b>{pts}</b>  |  ✏️ {correct}/{total} верно\n",
+        "gs_no_answers": "ℹ️ Ваш ребёнок не отвечал в этой сессии.\n",
+        "gs_daily_header": "\n🎮 <b>Сегодняшние игры</b>\n━━━━━━━━━━━━━━━━━━━\n",
+        "gs_daily_child_header": "\n👤 <b>{name}</b>\n",
+        "gs_daily_session_line": "  • <i>{title}</i> — #{rank}/{total}, {pts} балл\n",
     },
 }
 
